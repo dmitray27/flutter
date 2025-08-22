@@ -1,4 +1,4 @@
-name: helloworld
+name: mc
 description: A new Flutter project.
 publish_to: 'none'
 
@@ -10,6 +10,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  firebase_core: ^2.32.0
+  firebase_auth: ^4.20.0
+  cloud_firestore: ^4.17.5
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
