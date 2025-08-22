@@ -6,8 +6,4 @@ pluginManagement {
     }
 }
 
-plugins {
-    id "dev.flutter.flutter-gradle-plugin" version "1.0.0" apply false
-}
-
-include ":app"
+include(":app")
