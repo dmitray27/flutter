@@ -418,6 +418,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     _sendUserName();
                   }
 
+                  if (!context.mounted) return;
                   Navigator.pop(context);
                 } else if (newName.isEmpty) {
                   _showSnackBar('Имя не может быть пустым');
@@ -429,36 +430,6 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       },
     );
-  }
-
-  String _getConnectionStateText() {
-    switch (_connectionState) {
-      case 0: return 'Нет подключения';
-      case 1: return 'Подключение...';
-      case 2: return 'Подключено';
-      case 3: return 'Ошибка';
-      default: return 'Неизвестно';
-    }
-  }
-
-  Color _getConnectionStateColor() {
-    switch (_connectionState) {
-      case 0: return Colors.red;
-      case 1: return Colors.orange;
-      case 2: return Colors.green;
-      case 3: return Colors.red;
-      default: return Colors.grey;
-    }
-  }
-
-  IconData _getConnectionStateIcon() {
-    switch (_connectionState) {
-      case 0: return Icons.wifi_off;
-      case 1: return Icons.wifi_find;
-      case 2: return Icons.wifi;
-      case 3: return Icons.error;
-      default: return Icons.wifi_off;
-    }
   }
 
   @override
