@@ -16,7 +16,7 @@ dependencies:
   network_info_plus: ^5.0.3
   #wifi_info_flutter: ^4.0.1  # ← ДОБАВЬТЕ ЭТУ СТРОЧКУ
   shared_preferences: ^2.2.2
-  window_manager: ^0.5.0  # ← ВЕРНУТЬ как было
+  window_manager: 0.4.3  # пиним совместимую версию для Flutter 3.22
 
 dev_dependencies:
   flutter_test:

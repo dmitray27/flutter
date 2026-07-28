@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'screen_un2_2.dart'; // ← подключаем экран чата
 import 'package:window_manager/window_manager.dart';
 
-void main() async {
+void mainWindow() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Инициализация window_manager
