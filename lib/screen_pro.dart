@@ -31,6 +31,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
   final List<Message> _messages = [];
   String _myName = "User";
   final ScrollController _scrollController = ScrollController();
@@ -72,6 +73,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _connectionTimer?.cancel();
     _disconnect();
     _textController.dispose();
+    _nameController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -418,7 +420,7 @@ class _ChatScreenState extends State<ChatScreen> {
   // ============================
 
   void _showChangeNameDialog() {
-    final nameController = TextEditingController(text: _myName);
+    _nameController.text = _myName;
 
     showDialog<void>(
       context: context,
@@ -429,7 +431,7 @@ class _ChatScreenState extends State<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: nameController,
+                controller: _nameController,
                 decoration: const InputDecoration(
                   labelText: 'Ваше имя в чате',
                   border: OutlineInputBorder(),
@@ -451,7 +453,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final newName = nameController.text.trim();
+                final newName = _nameController.text.trim();
                 if (newName.isNotEmpty && newName != _myName) {
                   await _prefs.setString('user_name', newName);
                   setState(() {
@@ -471,7 +473,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         );
       },
-    ).whenComplete(nameController.dispose);
+    );
   }
 
   // ============================
