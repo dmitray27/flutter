@@ -371,19 +371,16 @@ class _ChatScreenState extends State<ChatScreen> {
     _textController.clear();
     _scrollToBottom();
 
+    // Формат кадра: msg:<имя>:<текст>
     try {
-      final response = await http.post(
-        Uri.parse('http://$_esp32Address/send'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'from=${Uri.encodeComponent(_myName)}'
-            '&text=${Uri.encodeComponent(text)}',
-      ).timeout(const Duration(seconds: 5));
-
-      if (response.statusCode != 200) {
-        _showSnackBar('Ошибка отправки: ${response.statusCode}');
+      if (_webSocketChannel != null) {
+        _webSocketChannel!.sink.add('msg:$_myName:$text');
+        print('Отправлено через WS: msg:$_myName:$text');
+      } else {
+        _showSnackBar('Нет подключения к WebSocket');
       }
     } catch (e) {
-      print('Ошибка отправки: $e');
+      print('Ошибка отправки WS: $e');
       _showSnackBar('Не удалось отправить');
     }
   }
