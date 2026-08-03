@@ -5,18 +5,19 @@ import 'screen_pro.dart';
 import 'dart:async';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Глобальная обработка ошибок Flutter
-  FlutterError.onError = (details) {
-    print('❌ Flutter Error: ${details.exception}');
-    if (details.stack != null) {
-      print('Stack: ${details.stack}');
-    }
-  };
-
-  // Обработка всех необработанных ошибок в зоне выполнения
+  // Всё, что трогает биндинги, должно жить внутри той же зоны, что и runApp,
+  // иначе Flutter ругается на несовпадение зон
   runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    // Глобальная обработка ошибок Flutter
+    FlutterError.onError = (details) {
+      debugPrint('❌ Flutter Error: ${details.exception}');
+      if (details.stack != null) {
+        debugPrint('Stack: ${details.stack}');
+      }
+    };
+
     // Инициализация window_manager ТОЛЬКО для Linux
     if (Platform.isLinux) {
       try {
@@ -37,14 +38,14 @@ void main() {
 
       } catch (e) {
         // Ошибка window_manager не критична – приложение всё равно запустится
-        print('⚠️ WindowManager error (non-critical): $e');
+        debugPrint('⚠️ WindowManager error (non-critical): $e');
       }
     }
 
     runApp(const MyApp());
   }, (error, stack) {
-    print('❌ Unhandled error: $error');
-    print('Stack: $stack');
+    debugPrint('❌ Unhandled error: $error');
+    debugPrint('Stack: $stack');
   });
 }
 

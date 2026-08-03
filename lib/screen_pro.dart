@@ -33,7 +33,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final List<Message> _messages = [];
   String _myName = "User";
-  String _previousName = "User";
   final ScrollController _scrollController = ScrollController();
 
   WebSocketChannel? _webSocketChannel;
@@ -47,9 +46,15 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isConnecting = false;
   bool _isDisconnecting = false;
   Timer? _connectionTimer;
-  Timer? _reconnectTimer;
 
-  final String _esp32Address = '192.168.4.1';
+  // Эхо собственных сообщений, пришедшее обратно с ESP32, показывать не нужно:
+  // оно уже добавлено в список локально при отправке.
+  final List<String> _pendingEcho = [];
+
+  static const String _esp32Address = '192.168.4.1';
+  static const Duration _pollInterval = Duration(seconds: 5);
+  static const int _maxPendingEcho = 16;
+
   String _deviceIp = '';
 
   // ============================
@@ -65,7 +70,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _connectionTimer?.cancel();
-    _reconnectTimer?.cancel();
     _disconnect();
     _textController.dispose();
     _scrollController.dispose();
@@ -87,7 +91,6 @@ class _ChatScreenState extends State<ChatScreen> {
       await _prefs.setString('user_name', _myName);
     }
 
-    _previousName = _myName;
     setState(() {});
     _startConnectionMonitoring();
   }
@@ -97,7 +100,7 @@ class _ChatScreenState extends State<ChatScreen> {
   // ============================
 
   void _startConnectionMonitoring() {
-    _connectionTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    _connectionTimer = Timer.periodic(_pollInterval, (timer) {
       _checkConnection();
     });
 
@@ -111,35 +114,42 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final networkInfo = NetworkInfo();
-      String? deviceIp = await networkInfo.getWifiIP();
-      await _updateWifiInfo();
+      final deviceIp = await networkInfo.getWifiIP() ?? '';
+
+      // SSID запрашиваем только при смене сети — это тяжёлый вызов
+      if (deviceIp != _deviceIp) {
+        await _updateWifiInfo();
+      }
 
       if (mounted) {
         setState(() {
-          _deviceIp = deviceIp ?? '';
+          _deviceIp = deviceIp;
         });
       }
 
-      bool isInEsp32Network = _deviceIp.startsWith('192.168.4.');
+      final isInEsp32Network = _deviceIp.startsWith('192.168.4.');
 
       if (!isInEsp32Network || _deviceIp.isEmpty) {
         if (_connectionState != ConnectionStatus.disconnected) {
           await _disconnect();
-          if (mounted) {
-            setState(() {
-              _connectionState = ConnectionStatus.disconnected;
-              _lastError = 'Подключитесь к WiFi ESP32';
-            });
-          }
+        }
+        if (mounted) {
+          setState(() {
+            _connectionState = ConnectionStatus.disconnected;
+            _lastError = 'Подключитесь к WiFi ESP32';
+          });
         }
         return;
       }
 
-      if (_connectionState == ConnectionStatus.disconnected && !_isConnecting) {
+      // Повтор попытки после разрыва идёт по этому же таймеру,
+      // отдельный _reconnectTimer не нужен
+      if (_connectionState == ConnectionStatus.disconnected ||
+          _connectionState == ConnectionStatus.error) {
         _connectToEsp32();
       }
     } catch (e) {
-      print('Ошибка проверки WiFi: $e');
+      debugPrint('Ошибка проверки WiFi: $e');
       if (mounted) {
         setState(() {
           _currentWifiName = 'Ошибка получения WiFi';
@@ -158,7 +168,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     } catch (e) {
-      print('Ошибка получения имени WiFi: $e');
+      debugPrint('Ошибка получения имени WiFi: $e');
       if (mounted) {
         setState(() {
           _currentWifiName = 'Неизвестная сеть';
@@ -173,7 +183,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _connectToEsp32() async {
     if (_isConnecting) {
-      print('⚠️ Уже подключаюсь, пропускаю');
+      debugPrint('⚠️ Уже подключаюсь, пропускаю');
       return;
     }
 
@@ -185,12 +195,12 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     }
 
-    print('Подключаюсь к ESP32 на $_esp32Address...');
+    debugPrint('Подключаюсь к ESP32 на $_esp32Address...');
 
     try {
       await _disconnect();
 
-      print('Проверяю ping ESP32...');
+      debugPrint('Проверяю ping ESP32...');
       final response = await http.get(
         Uri.parse('http://$_esp32Address/ping'),
       ).timeout(const Duration(seconds: 3));
@@ -199,7 +209,7 @@ class _ChatScreenState extends State<ChatScreen> {
         throw Exception('ESP32 не отвечает на ping');
       }
 
-      print('ESP32 доступен, подключаю WebSocket...');
+      debugPrint('ESP32 доступен, подключаю WebSocket...');
 
       _webSocketChannel = IOWebSocketChannel.connect(
         'ws://$_esp32Address:81',
@@ -208,17 +218,17 @@ class _ChatScreenState extends State<ChatScreen> {
 
       _webSocketSubscription = _webSocketChannel!.stream.listen(
             (message) {
-          print('📥 WebSocket: $message');
+          debugPrint('📥 WebSocket: $message');
           _processIncomingMessage(message.toString());
         },
         onError: (error) {
-          print('❌ WebSocket ошибка: $error');
+          debugPrint('❌ WebSocket ошибка: $error');
           if (_connectionState != ConnectionStatus.disconnected) {
             _handleConnectionError('WebSocket ошибка');
           }
         },
         onDone: () {
-          print('🔌 WebSocket закрыт');
+          debugPrint('🔌 WebSocket закрыт');
           if (_connectionState != ConnectionStatus.disconnected) {
             _handleConnectionError('Соединение закрыто сервером');
           }
@@ -239,18 +249,12 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
 
-      print('✅ Успешно подключено к ESP32');
+      debugPrint('✅ Успешно подключено к ESP32');
 
-      if (_myName != _previousName) {
-        _sendUserName();
-        if (mounted) {
-          setState(() {
-            _previousName = _myName;
-          });
-        }
-      }
+      // Имя отправляем на каждом подключении: ESP32 не хранит его между сессиями
+      _sendUserName();
     } catch (e) {
-      print('❌ Ошибка подключения: $e');
+      debugPrint('❌ Ошибка подключения: $e');
       _handleConnectionError('Не удалось подключиться');
     } finally {
       _isConnecting = false;
@@ -261,14 +265,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isDisconnecting) return;
     _isDisconnecting = true;
 
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
+    _pendingEcho.clear();
 
     if (_webSocketSubscription != null) {
       try {
         await _webSocketSubscription!.cancel();
       } catch (e) {
-        print('Ошибка отписки: $e');
+        debugPrint('Ошибка отписки: $e');
       }
       _webSocketSubscription = null;
     }
@@ -277,7 +280,7 @@ class _ChatScreenState extends State<ChatScreen> {
       try {
         await _webSocketChannel!.sink.close();
       } catch (e) {
-        print('Ошибка при закрытии канала: $e');
+        debugPrint('Ошибка при закрытии канала: $e');
       }
       _webSocketChannel = null;
     }
@@ -302,25 +305,16 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     }
 
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted &&
-          _deviceIp.startsWith('192.168.4.') &&
-          _connectionState == ConnectionStatus.error &&
-          !_isConnecting) {
-        print('🔄 Авто-переподключение...');
-        _connectToEsp32();
-      }
-    });
+    // Повторную попытку сделает _checkConnection по своему таймеру
   }
 
   void _sendUserName() {
     if (_webSocketChannel != null && _connectionState == ConnectionStatus.connected) {
       try {
         _webSocketChannel!.sink.add('setName:$_myName');
-        print('Отправлено имя: $_myName');
+        debugPrint('Отправлено имя: $_myName');
       } catch (e) {
-        print('Ошибка отправки имени: $e');
+        debugPrint('Ошибка отправки имени: $e');
       }
     }
   }
@@ -330,6 +324,8 @@ class _ChatScreenState extends State<ChatScreen> {
   // ============================
 
   void _processIncomingMessage(String message) {
+    if (!mounted) return;
+
     message = message.trim();
     if (message.isEmpty) return;
 
@@ -345,18 +341,24 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final parts = message.split(':');
-    if (parts.length > 1) {
-      final from = parts[0];
-      final text = parts.sublist(1).join(':').trim();
+    final separator = message.indexOf(':');
+    if (separator <= 0) return;
 
-      if (from != _myName) {
-        setState(() {
-          _messages.add(Message(from, text, false));
-        });
-        _scrollToBottom();
-      }
+    // Своё сообщение, вернувшееся широковещательно. Сверяем с очередью
+    // отправленных, а не с именем: у собеседника имя может совпадать
+    final echoIndex = _pendingEcho.indexOf(message);
+    if (echoIndex >= 0) {
+      _pendingEcho.removeAt(echoIndex);
+      return;
     }
+
+    final from = message.substring(0, separator);
+    final text = message.substring(separator + 1).trim();
+
+    setState(() {
+      _messages.add(Message(from, text, false));
+    });
+    _scrollToBottom();
   }
 
   Future<void> _sendMessage() async {
@@ -375,12 +377,16 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       if (_webSocketChannel != null) {
         _webSocketChannel!.sink.add('msg:$_myName:$text');
-        print('Отправлено через WS: msg:$_myName:$text');
+        _pendingEcho.add('$_myName:$text');
+        if (_pendingEcho.length > _maxPendingEcho) {
+          _pendingEcho.removeAt(0);
+        }
+        debugPrint('Отправлено через WS: msg:$_myName:$text');
       } else {
         _showSnackBar('Нет подключения к WebSocket');
       }
     } catch (e) {
-      print('Ошибка отправки WS: $e');
+      debugPrint('Ошибка отправки WS: $e');
       _showSnackBar('Не удалось отправить');
     }
   }
@@ -414,7 +420,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showChangeNameDialog() {
     final nameController = TextEditingController(text: _myName);
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -450,7 +456,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   await _prefs.setString('user_name', newName);
                   setState(() {
                     _myName = newName;
-                    _previousName = newName;
                   });
                   if (_connectionState == ConnectionStatus.connected) {
                     _sendUserName();
@@ -466,7 +471,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         );
       },
-    );
+    ).whenComplete(nameController.dispose);
   }
 
   // ============================
@@ -557,7 +562,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 // Панель статуса
                 Container(
                   padding: const EdgeInsets.all(12),
-                  color: statusColor.withOpacity(0.1),
+                  color: statusColor.withAlpha(26),
                   child: Row(
                     children: [
                       Icon(statusIcon, color: statusColor),
