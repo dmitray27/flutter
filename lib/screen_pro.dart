@@ -35,6 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Message> _messages = [];
   String _myName = "User";
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _inputFocusNode = FocusNode();
 
   WebSocketChannel? _webSocketChannel;
   StreamSubscription? _webSocketSubscription;
@@ -74,6 +75,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _disconnect();
     _textController.dispose();
     _nameController.dispose();
+    _inputFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -374,6 +376,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _textController.clear();
     _scrollToBottom();
+    // После отправки поле остаётся активным, иначе следующий ввод
+    // требует повторного тапа
+    _inputFocusNode.requestFocus();
 
     // Формат кадра: msg:<имя>:<текст>
     try {
@@ -403,11 +408,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // Список перевёрнут (reverse: true), поэтому низ — это смещение 0.
+  // Прокрутка к maxScrollExtent давала промах: у ListView.builder он
+  // оценочный, пока не измерены все элементы
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
@@ -482,6 +490,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isConnected = _connectionState == ConnectionStatus.connected;
+
     String statusText = '';
     Color statusColor = Colors.grey;
     IconData statusIcon = Icons.wifi_off;
@@ -648,9 +659,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   )
                       : ListView.builder(
                     controller: _scrollController,
+                    reverse: true,
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
-                      final msg = _messages[index];
+                      final msg = _messages[_messages.length - 1 - index];
                       return Container(
                         padding: const EdgeInsets.symmetric(
                             vertical: 8, horizontal: 12),
@@ -667,8 +679,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: msg.isMe
-                                    ? Colors.green[900]
-                                    : Colors.blue[700],
+                                    ? (isDark
+                                        ? Colors.green[200]
+                                        : Colors.green[900])
+                                    : (isDark
+                                        ? Colors.blue[200]
+                                        : Colors.blue[700]),
                                 fontSize: 12,
                               ),
                             ),
@@ -683,11 +699,25 @@ class _ChatScreenState extends State<ChatScreen> {
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
                                 color: msg.isMe
-                                    ? Colors.green[100]
-                                    : Colors.grey[200],
+                                    ? (isDark
+                                        ? Colors.green[800]
+                                        : Colors.green[100])
+                                    : (isDark
+                                        ? Colors.grey[800]
+                                        : Colors.grey[200]),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Text(msg.text),
+                              // Цвет текста задаём явно: пузыри не следуют
+                              // за темой, поэтому наследованный белый
+                              // на светлом фоне не читался
+                              child: Text(
+                                msg.text,
+                                style: TextStyle(
+                                  color: isDark
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -696,36 +726,44 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
 
-                // Поле ввода
-                if (_connectionState == ConnectionStatus.connected)
-                  Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _textController,
-                            maxLines: null,
-                            decoration: InputDecoration(
-                              hintText: 'Введите сообщение...',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.send),
-                                onPressed: _sendMessage,
-                              ),
+                // Поле ввода. Не убираем из дерева при потере связи, а
+                // блокируем: пересоздание TextField теряло подключение к
+                // клавиатуре, из-за чего первый ввод не доходил до поля
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _textController,
+                          focusNode: _inputFocusNode,
+                          enabled: isConnected,
+                          minLines: 1,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.send,
+                          keyboardType: TextInputType.text,
+                          decoration: InputDecoration(
+                            hintText: isConnected
+                                ? 'Введите сообщение...'
+                                : 'Нет связи с ESP32',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
                             ),
-                            onSubmitted: (_) => _sendMessage(),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.send),
+                              onPressed: isConnected ? _sendMessage : null,
+                            ),
                           ),
+                          onSubmitted: (_) => _sendMessage(),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
