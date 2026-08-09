@@ -10,34 +10,18 @@ import 'dart:async';
 // Состояния подключения
 enum ConnectionStatus { disconnected, connecting, connected, error }
 
-// Своё сообщение считается доставленным, когда ESP32 вернёт его
-// широковещательно: прошивка рассылает кадр только после того, как
-// поставила текст в очередь на передачу в эфир
-enum MessageStatus { sending, delivered, failed }
-
 class Message {
   final String from;
   final String text;
   final bool isMe;
   final DateTime timestamp;
-  MessageStatus status;
 
   Message(
     this.from,
     this.text,
     this.isMe, {
     DateTime? timestamp,
-    this.status = MessageStatus.delivered,
   }) : timestamp = timestamp ?? DateTime.now();
-}
-
-// Отправленный кадр, ждущий эха от ESP32
-class _PendingEcho {
-  final String frame;
-  final Message message;
-  Timer? timeout;
-
-  _PendingEcho(this.frame, this.message);
 }
 
 class ChatScreen extends StatefulWidget {
@@ -70,14 +54,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isDisconnecting = false;
   Timer? _connectionTimer;
 
-  // Эхо собственных сообщений, пришедшее обратно с ESP32, показывать не нужно:
-  // оно уже добавлено в список локально при отправке.
-  final List<_PendingEcho> _pendingEcho = [];
+  // Отправленные кадры, эхо которых ещё не вернулось с ESP32: прошивка
+  // рассылает сообщение всем, включая отправителя, а в списке оно уже есть
+  final List<String> _pendingEcho = [];
 
   static const String _esp32Address = '192.168.4.1';
   static const Duration _pollInterval = Duration(seconds: 5);
   static const int _maxPendingEcho = 16;
-  static const Duration _echoTimeout = Duration(seconds: 6);
   // Прошивка принимает WS-кадр до 1024 байт вместе с "msg:<имя>:";
   // кириллица занимает два байта на символ
   static const int _maxMessageLength = 300;
@@ -98,9 +81,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _connectionTimer?.cancel();
-    for (final pending in _pendingEcho) {
-      pending.timeout?.cancel();
-    }
     _disconnect();
     _textController.dispose();
     _nameController.dispose();
@@ -301,7 +281,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isDisconnecting) return;
     _isDisconnecting = true;
 
-    _failPendingEcho();
+    // Эхо по оборванному соединению уже не придёт
+    _pendingEcho.clear();
 
     if (_webSocketSubscription != null) {
       try {
@@ -344,21 +325,6 @@ class _ChatScreenState extends State<ChatScreen> {
     // Повторную попытку сделает _checkConnection по своему таймеру
   }
 
-  // Подтверждения по оборванному соединению уже не придут
-  void _failPendingEcho() {
-    if (_pendingEcho.isEmpty) return;
-
-    for (final pending in _pendingEcho) {
-      pending.timeout?.cancel();
-      pending.message.status = MessageStatus.failed;
-    }
-    _pendingEcho.clear();
-
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
   void _sendUserName() {
     if (_webSocketChannel != null && _connectionState == ConnectionStatus.connected) {
       try {
@@ -397,13 +363,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Своё сообщение, вернувшееся широковещательно. Сверяем с очередью
     // отправленных, а не с именем: у собеседника имя может совпадать
-    final echoIndex = _pendingEcho.indexWhere((p) => p.frame == message);
+    final echoIndex = _pendingEcho.indexOf(message);
     if (echoIndex >= 0) {
-      final pending = _pendingEcho.removeAt(echoIndex);
-      pending.timeout?.cancel();
-      setState(() {
-        pending.message.status = MessageStatus.delivered;
-      });
+      _pendingEcho.removeAt(echoIndex);
       return;
     }
 
@@ -420,10 +382,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _textController.text.trim();
     if (text.isEmpty || _connectionState != ConnectionStatus.connected) return;
 
-    // Добавляем в UI мгновенно, но помечаем как неподтверждённое
-    final message = Message(_myName, text, true, status: MessageStatus.sending);
     setState(() {
-      _messages.add(message);
+      _messages.add(Message(_myName, text, true));
     });
 
     _textController.clear();
@@ -433,9 +393,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _inputFocusNode.requestFocus();
 
     if (_webSocketChannel == null) {
-      setState(() {
-        message.status = MessageStatus.failed;
-      });
       _showSnackBar('Нет подключения к WebSocket');
       return;
     }
@@ -445,30 +402,15 @@ class _ChatScreenState extends State<ChatScreen> {
       _webSocketChannel!.sink.add('msg:$_myName:$text');
       debugPrint('Отправлено через WS: msg:$_myName:$text');
     } catch (e) {
-      // sink.add обычно не бросает: ошибка мёртвого сокета приходит
-      // асинхронно в onError, поэтому подтверждением служит только эхо
       debugPrint('Ошибка отправки WS: $e');
-      setState(() {
-        message.status = MessageStatus.failed;
-      });
       _showSnackBar('Не удалось отправить');
       return;
     }
 
-    final pending = _PendingEcho('$_myName:$text', message);
-    pending.timeout = Timer(_echoTimeout, () {
-      _pendingEcho.remove(pending);
-      if (!mounted) return;
-      setState(() {
-        message.status = MessageStatus.failed;
-      });
-    });
-    _pendingEcho.add(pending);
-
+    // Эхо, которое вернёт прошивка, не должно продублировать сообщение
+    _pendingEcho.add('$_myName:$text');
     if (_pendingEcho.length > _maxPendingEcho) {
-      final evicted = _pendingEcho.removeAt(0);
-      evicted.timeout?.cancel();
-      evicted.message.status = MessageStatus.failed;
+      _pendingEcho.removeAt(0);
     }
   }
 
@@ -476,32 +418,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
     return '$h:$m';
-  }
-
-  Widget _buildStatusIcon(Message msg, bool isDark) {
-    switch (msg.status) {
-      case MessageStatus.sending:
-        return Icon(
-          Icons.schedule,
-          size: 12,
-          color: isDark ? Colors.white70 : Colors.black54,
-        );
-      case MessageStatus.delivered:
-        return Icon(
-          Icons.done,
-          size: 12,
-          color: isDark ? Colors.white70 : Colors.black54,
-        );
-      case MessageStatus.failed:
-        return Tooltip(
-          message: 'ESP32 не подтвердил приём',
-          child: Icon(
-            Icons.error_outline,
-            size: 12,
-            color: isDark ? Colors.red[300] : Colors.red[700],
-          ),
-        );
-    }
   }
 
   void _showSnackBar(String message) {
@@ -842,25 +758,17 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.end,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        _formatTime(msg.timestamp),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: isDark
-                                              ? Colors.white70
-                                              : Colors.black54,
-                                        ),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      _formatTime(msg.timestamp),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: isDark
+                                            ? Colors.white70
+                                            : Colors.black54,
                                       ),
-                                      if (msg.isMe) ...[
-                                        const SizedBox(width: 4),
-                                        _buildStatusIcon(msg, isDark),
-                                      ],
-                                    ],
+                                    ),
                                   ),
                                 ],
                               ),
