@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/io.dart';
@@ -6,6 +7,7 @@ import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'dart:async';
+import 'dart:convert';
 
 // Состояния подключения
 enum ConnectionStatus { disconnected, connecting, connected, error }
@@ -63,6 +65,9 @@ class _ChatScreenState extends State<ChatScreen> {
   // Загружается асинхронно: до этого диалог смены имени открывать нельзя
   SharedPreferences? _prefs;
 
+  final AudioPlayer _notificationPlayer = AudioPlayer();
+  bool _soundEnabled = true;
+
   ConnectionStatus _connectionState = ConnectionStatus.disconnected;
   String _currentWifiName = 'Не подключено';
   String _lastError = '';
@@ -82,6 +87,8 @@ class _ChatScreenState extends State<ChatScreen> {
   // кириллица занимает два байта на символ
   static const int _maxMessageLength = 300;
   static const int _maxNameLength = 15;
+  static const String _notificationAsset = '73g_assets/sounds/notify.mp3';
+  static const String _soundPrefKey = 'sound_enabled';
 
   String _deviceIp = '';
 
@@ -106,6 +113,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _nameController.dispose();
     _inputFocusNode.dispose();
     _scrollController.dispose();
+    _notificationPlayer.dispose();
     super.dispose();
   }
 
@@ -116,6 +124,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     _prefs = prefs;
+
+    _soundEnabled = prefs.getBool(_soundPrefKey) ?? true;
 
     final savedName = prefs.getString('user_name');
     if (savedName != null && savedName.isNotEmpty) {
@@ -150,11 +160,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final networkInfo = NetworkInfo();
       final deviceIp = await networkInfo.getWifiIP() ?? '';
-
-      // SSID запрашиваем только при смене сети — это тяжёлый вызов
-      if (deviceIp != _deviceIp) {
-        await _updateWifiInfo();
-      }
+      final ipChanged = deviceIp != _deviceIp;
 
       // Присваиваем вне setState: иначе при !mounted проверка сети
       // пошла бы по устаревшему значению
@@ -171,11 +177,18 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         if (mounted) {
           setState(() {
+            _currentWifiName = 'Не подключено';
             _connectionState = ConnectionStatus.disconnected;
             _lastError = 'Подключитесь к WiFi ESP32';
           });
         }
         return;
+      }
+
+      // Имя сети спрашиваем у самой платы, поэтому только когда телефон уже
+      // в подсети ESP32 и только при смене IP
+      if (ipChanged) {
+        await _updateWifiInfo();
       }
 
       // Повтор попытки после разрыва идёт по этому же таймеру,
@@ -194,23 +207,54 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // SSID берём у самой платы по HTTP: getWifiName() на Android требует
+  // разрешения геолокации, а /info отдаёт то же имя без него
   Future<void> _updateWifiInfo() async {
     try {
-      final networkInfo = NetworkInfo();
-      String? wifiName = await networkInfo.getWifiName();
+      final response = await http
+          .get(Uri.parse('http://$_esp32Address/info'))
+          .timeout(const Duration(seconds: 3));
+
+      String? ssid;
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map && decoded['ssid'] is String) {
+          final value = decoded['ssid'] as String;
+          if (value.isNotEmpty) ssid = value;
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _currentWifiName = wifiName ?? 'Неизвестная сеть';
+          _currentWifiName = ssid ?? 'Сеть ESP32';
         });
       }
     } catch (e) {
-      debugPrint('Ошибка получения имени WiFi: $e');
+      debugPrint('Ошибка получения имени сети от ESP32: $e');
       if (mounted) {
         setState(() {
-          _currentWifiName = 'Неизвестная сеть';
+          _currentWifiName = 'Сеть ESP32';
         });
       }
     }
+  }
+
+  Future<void> _playNotificationSound() async {
+    if (!_soundEnabled) return;
+    try {
+      await _notificationPlayer.stop();
+      await _notificationPlayer.play(AssetSource(_notificationAsset));
+    } catch (e) {
+      debugPrint('Не удалось проиграть звук уведомления: $e');
+    }
+  }
+
+  Future<void> _toggleSound() async {
+    final enabled = !_soundEnabled;
+    setState(() {
+      _soundEnabled = enabled;
+    });
+    await _prefs?.setBool(_soundPrefKey, enabled);
   }
 
   // ============================
@@ -414,6 +458,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.add(Message(from, text, false));
     });
     _scrollToBottom();
+    // Только чужие сообщения: ping, System: и собственное эхо ушли по return выше
+    _playNotificationSound();
   }
 
   Future<void> _sendMessage() async {
@@ -681,6 +727,14 @@ class _ChatScreenState extends State<ChatScreen> {
               title: const Text('Радиочат', style: TextStyle(color: Colors.white)),
               backgroundColor: Colors.green[800],
               actions: [
+                IconButton(
+                  icon: Icon(_soundEnabled
+                      ? Icons.notifications_active
+                      : Icons.notifications_off),
+                  onPressed: _toggleSound,
+                  tooltip: _soundEnabled ? 'Выключить звук' : 'Включить звук',
+                  color: Colors.white,
+                ),
                 IconButton(
                   icon: const Icon(Icons.edit),
                   onPressed: _prefs == null ? null : _showChangeNameDialog,
