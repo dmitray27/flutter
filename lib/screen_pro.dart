@@ -4,20 +4,46 @@ import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 import 'dart:async';
+
+// Состояния подключения
+enum ConnectionStatus { disconnected, connecting, connected, error }
+
+// Своё сообщение считается доставленным, когда ESP32 вернёт его
+// широковещательно: прошивка рассылает кадр только после того, как
+// поставила текст в очередь на передачу в эфир
+enum MessageStatus { sending, delivered, failed }
 
 class Message {
   final String from;
   final String text;
   final bool isMe;
   final DateTime timestamp;
+  MessageStatus status;
 
-  Message(this.from, this.text, this.isMe, {DateTime? timestamp})
-      : timestamp = timestamp ?? DateTime.now();
+  Message(
+    this.from,
+    this.text,
+    this.isMe, {
+    DateTime? timestamp,
+    this.status = MessageStatus.delivered,
+  }) : timestamp = timestamp ?? DateTime.now();
+}
+
+// Отправленный кадр, ждущий эха от ESP32
+class _PendingEcho {
+  final String frame;
+  final Message message;
+  Timer? timeout;
+
+  _PendingEcho(this.frame, this.message);
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final bool isLinux;
+
+  const ChatScreen({super.key, required this.isLinux});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -25,23 +51,43 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
   final List<Message> _messages = [];
   String _myName = "User";
-  String _previousName = "User";
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _inputFocusNode = FocusNode();
+
   WebSocketChannel? _webSocketChannel;
   StreamSubscription? _webSocketSubscription;
 
-  late SharedPreferences _prefs;
+  // Загружается асинхронно: до этого диалог смены имени открывать нельзя
+  SharedPreferences? _prefs;
 
-  int _connectionState = 0;
+  ConnectionStatus _connectionState = ConnectionStatus.disconnected;
   String _currentWifiName = 'Не подключено';
   String _lastError = '';
   bool _isConnecting = false;
+  bool _isDisconnecting = false;
   Timer? _connectionTimer;
 
-  String _esp32Address = '192.168.4.1';
+  // Эхо собственных сообщений, пришедшее обратно с ESP32, показывать не нужно:
+  // оно уже добавлено в список локально при отправке.
+  final List<_PendingEcho> _pendingEcho = [];
+
+  static const String _esp32Address = '192.168.4.1';
+  static const Duration _pollInterval = Duration(seconds: 5);
+  static const int _maxPendingEcho = 16;
+  static const Duration _echoTimeout = Duration(seconds: 6);
+  // Прошивка принимает WS-кадр до 1024 байт вместе с "msg:<имя>:";
+  // кириллица занимает два байта на символ
+  static const int _maxMessageLength = 300;
+  static const int _maxNameLength = 15;
+
   String _deviceIp = '';
+
+  // ============================
+  // Жизненный цикл
+  // ============================
 
   @override
   void initState() {
@@ -49,26 +95,47 @@ class _ChatScreenState extends State<ChatScreen> {
     _initPreferences();
   }
 
-  Future<void> _initPreferences() async {
-    _prefs = await SharedPreferences.getInstance();
+  @override
+  void dispose() {
+    _connectionTimer?.cancel();
+    for (final pending in _pendingEcho) {
+      pending.timeout?.cancel();
+    }
+    _disconnect();
+    _textController.dispose();
+    _nameController.dispose();
+    _inputFocusNode.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
 
-    final savedName = _prefs.getString('user_name');
+  // ============================
+  // Инициализация настроек
+  // ============================
+
+  Future<void> _initPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    _prefs = prefs;
+
+    final savedName = prefs.getString('user_name');
     if (savedName != null && savedName.isNotEmpty) {
       _myName = savedName;
     } else {
       _myName = "User_${DateTime.now().millisecondsSinceEpoch % 1000}";
-      await _prefs.setString('user_name', _myName);
+      await prefs.setString('user_name', _myName);
     }
 
-    _previousName = _myName;
-
+    if (!mounted) return;
     setState(() {});
-
     _startConnectionMonitoring();
   }
 
+  // ============================
+  // Мониторинг WiFi
+  // ============================
+
   void _startConnectionMonitoring() {
-    _connectionTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    _connectionTimer = Timer.periodic(_pollInterval, (timer) {
       _checkConnection();
     });
 
@@ -78,277 +145,367 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _checkConnection() async {
+    if (_isConnecting || _isDisconnecting) return;
+
     try {
       final networkInfo = NetworkInfo();
-      String? deviceIp = await networkInfo.getWifiIP();
+      final deviceIp = await networkInfo.getWifiIP() ?? '';
 
-      // Обновляем информацию о WiFi
-      await _updateWifiInfo();
+      // SSID запрашиваем только при смене сети — это тяжёлый вызов
+      if (deviceIp != _deviceIp) {
+        await _updateWifiInfo();
+      }
 
-      setState(() {
-        _deviceIp = deviceIp ?? '';
-      });
+      // Присваиваем вне setState: иначе при !mounted проверка сети
+      // пошла бы по устаревшему значению
+      _deviceIp = deviceIp;
+      if (mounted) {
+        setState(() {});
+      }
 
-      // Проверяем, в сети ли ESP32
-      bool isInEsp32Network = _deviceIp.startsWith('192.168.4.');
+      final isInEsp32Network = _deviceIp.startsWith('192.168.4.');
 
       if (!isInEsp32Network || _deviceIp.isEmpty) {
-        if (_connectionState != 0) {
-          _disconnect();
+        if (_connectionState != ConnectionStatus.disconnected) {
+          await _disconnect();
+        }
+        if (mounted) {
           setState(() {
-            _connectionState = 0;
+            _connectionState = ConnectionStatus.disconnected;
             _lastError = 'Подключитесь к WiFi ESP32';
           });
         }
         return;
       }
 
-      // Если в сети ESP32, но не подключены
-      if (_connectionState == 0 && !_isConnecting) {
+      // Повтор попытки после разрыва идёт по этому же таймеру,
+      // отдельный _reconnectTimer не нужен
+      if (_connectionState == ConnectionStatus.disconnected ||
+          _connectionState == ConnectionStatus.error) {
         _connectToEsp32();
       }
-
     } catch (e) {
-      print('Ошибка проверки: $e');
-      setState(() {
-        _currentWifiName = 'Ошибка получения WiFi';
-      });
+      debugPrint('Ошибка проверки WiFi: $e');
+      if (mounted) {
+        setState(() {
+          _currentWifiName = 'Ошибка получения WiFi';
+        });
+      }
     }
   }
 
-  // Новый метод: получение информации о WiFi
   Future<void> _updateWifiInfo() async {
     try {
       final networkInfo = NetworkInfo();
-
-      // Получаем имя WiFi сети
       String? wifiName = await networkInfo.getWifiName();
-
-      setState(() {
-        _currentWifiName = wifiName ?? 'Неизвестная сеть';
-      });
-
-      print('Текущая WiFi сеть: $_currentWifiName');
-
+      if (mounted) {
+        setState(() {
+          _currentWifiName = wifiName ?? 'Неизвестная сеть';
+        });
+      }
     } catch (e) {
-      print('Ошибка получения имени WiFi: $e');
-      setState(() {
-        _currentWifiName = 'Неизвестная сеть';
-      });
+      debugPrint('Ошибка получения имени WiFi: $e');
+      if (mounted) {
+        setState(() {
+          _currentWifiName = 'Неизвестная сеть';
+        });
+      }
     }
   }
 
+  // ============================
+  // Подключение / отключение
+  // ============================
+
   Future<void> _connectToEsp32() async {
-    if (_isConnecting) return;
+    if (_isConnecting) {
+      debugPrint('⚠️ Уже подключаюсь, пропускаю');
+      return;
+    }
 
     _isConnecting = true;
-    setState(() {
-      _connectionState = 1;
-      _lastError = 'Подключение...';
-    });
+    if (mounted) {
+      setState(() {
+        _connectionState = ConnectionStatus.connecting;
+        _lastError = 'Подключение...';
+      });
+    }
 
-    print('Подключаюсь к ESP32 на $_esp32Address...');
+    debugPrint('Подключаюсь к ESP32 на $_esp32Address...');
 
     try {
-      // Закрываем старое соединение
       await _disconnect();
 
-      // Проверяем доступность ESP32 через /ping
-      print('Проверяю ping ESP32...');
+      debugPrint('Проверяю ping ESP32...');
       final response = await http.get(
         Uri.parse('http://$_esp32Address/ping'),
       ).timeout(const Duration(seconds: 3));
 
       if (response.statusCode != 200) {
-        throw Exception('ESP32 не отвечает');
+        throw Exception('ESP32 не отвечает на ping');
       }
 
-      print('ESP32 доступен, подключаю WebSocket...');
+      debugPrint('ESP32 доступен, подключаю WebSocket...');
 
-      // Подключаем WebSocket
       _webSocketChannel = IOWebSocketChannel.connect(
         'ws://$_esp32Address:81',
         pingInterval: const Duration(seconds: 15),
       );
 
-      // Настраиваем слушателя
       _webSocketSubscription = _webSocketChannel!.stream.listen(
             (message) {
-          print('📥 WebSocket: $message');
+          debugPrint('📥 WebSocket: $message');
           _processIncomingMessage(message.toString());
         },
         onError: (error) {
-          print('❌ WebSocket ошибка: $error');
-          if (_connectionState != 0) {
+          debugPrint('❌ WebSocket ошибка: $error');
+          if (_connectionState != ConnectionStatus.disconnected) {
             _handleConnectionError('WebSocket ошибка');
           }
         },
         onDone: () {
-          print('🔌 WebSocket закрыт');
-          if (_connectionState != 0) {
-            _handleConnectionError('Соединение закрыто');
+          debugPrint('🔌 WebSocket закрыт');
+          if (_connectionState != ConnectionStatus.disconnected) {
+            _handleConnectionError('Соединение закрыто сервером');
           }
         },
+        cancelOnError: true,
       );
 
-      // Даем время на установку соединения
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // Успешное подключение
-      setState(() {
-        _connectionState = 2;
-        _lastError = '';
-      });
+      if (_webSocketChannel == null) {
+        throw Exception('WebSocket не создан');
+      }
 
-      print('✅ Успешно подключено к ESP32');
-
-      // Отправляем имя только если оно изменилось
-      if (_myName != _previousName) {
-        _sendUserName();
+      if (mounted) {
         setState(() {
-          _previousName = _myName;
+          _connectionState = ConnectionStatus.connected;
+          _lastError = '';
         });
       }
 
+      debugPrint('✅ Успешно подключено к ESP32');
+
+      // Имя отправляем на каждом подключении: ESP32 не хранит его между сессиями
+      _sendUserName();
     } catch (e) {
-      print('❌ Ошибка подключения: $e');
-
-      // Пробуем стандартный адрес если текущий не работает
-      if (_esp32Address != '192.168.4.1') {
-        print('Пробую стандартный адрес 192.168.4.1');
-        _esp32Address = '192.168.4.1';
-        _connectToEsp32();
-        return;
-      }
-
-      _handleConnectionError(e.toString());
+      debugPrint('❌ Ошибка подключения: $e');
+      _handleConnectionError('Не удалось подключиться');
     } finally {
       _isConnecting = false;
     }
   }
 
+  Future<void> _disconnect() async {
+    if (_isDisconnecting) return;
+    _isDisconnecting = true;
+
+    _failPendingEcho();
+
+    if (_webSocketSubscription != null) {
+      try {
+        await _webSocketSubscription!.cancel();
+      } catch (e) {
+        debugPrint('Ошибка отписки: $e');
+      }
+      _webSocketSubscription = null;
+    }
+
+    if (_webSocketChannel != null) {
+      try {
+        await _webSocketChannel!.sink.close();
+      } catch (e) {
+        debugPrint('Ошибка при закрытии канала: $e');
+      }
+      _webSocketChannel = null;
+    }
+
+    if (mounted) {
+      setState(() {
+        _connectionState = ConnectionStatus.disconnected;
+        _lastError = '';
+      });
+    }
+
+    _isDisconnecting = false;
+  }
+
+  void _handleConnectionError(String error) {
+    if (_connectionState == ConnectionStatus.disconnected || _isDisconnecting) return;
+
+    if (mounted) {
+      setState(() {
+        _connectionState = ConnectionStatus.error;
+        _lastError = error;
+      });
+    }
+
+    // Повторную попытку сделает _checkConnection по своему таймеру
+  }
+
+  // Подтверждения по оборванному соединению уже не придут
+  void _failPendingEcho() {
+    if (_pendingEcho.isEmpty) return;
+
+    for (final pending in _pendingEcho) {
+      pending.timeout?.cancel();
+      pending.message.status = MessageStatus.failed;
+    }
+    _pendingEcho.clear();
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   void _sendUserName() {
-    if (_webSocketChannel != null && _connectionState == 2) {
+    if (_webSocketChannel != null && _connectionState == ConnectionStatus.connected) {
       try {
         _webSocketChannel!.sink.add('setName:$_myName');
-        print('Отправлено имя: $_myName');
+        debugPrint('Отправлено имя: $_myName');
       } catch (e) {
-        print('Ошибка отправки имени: $e');
+        debugPrint('Ошибка отправки имени: $e');
       }
     }
   }
 
+  // ============================
+  // Обработка сообщений
+  // ============================
+
   void _processIncomingMessage(String message) {
+    if (!mounted) return;
+
     message = message.trim();
     if (message.isEmpty) return;
 
-    print('Обработка сообщения: $message');
-
-    // Обработка heartbeat
     if (message == "ping") {
-      // Отвечаем на heartbeat
-      if (_webSocketChannel != null && _connectionState == 2) {
+      if (_webSocketChannel != null && _connectionState == ConnectionStatus.connected) {
         _webSocketChannel!.sink.add("pong");
       }
       return;
     }
 
     if (message.startsWith('System:')) {
-      // Системное сообщение показываем как уведомление
-      String sysMsg = message.substring(7);
-      _showSnackBar(sysMsg);
+      _showSnackBar(message.substring(7));
       return;
     }
 
-    // Разбираем обычное сообщение
-    final colonIndex = message.indexOf(':');
-    if (colonIndex > 0 && colonIndex < message.length - 1) {
-      final from = message.substring(0, colonIndex);
-      final text = message.substring(colonIndex + 1).trim();
+    final separator = message.indexOf(':');
+    if (separator <= 0) return;
 
-      if (from != _myName) {
-        setState(() {
-          _messages.add(Message(from, text, false));
-        });
-        _scrollToBottom();
-      }
+    // Своё сообщение, вернувшееся широковещательно. Сверяем с очередью
+    // отправленных, а не с именем: у собеседника имя может совпадать
+    final echoIndex = _pendingEcho.indexWhere((p) => p.frame == message);
+    if (echoIndex >= 0) {
+      final pending = _pendingEcho.removeAt(echoIndex);
+      pending.timeout?.cancel();
+      setState(() {
+        pending.message.status = MessageStatus.delivered;
+      });
+      return;
     }
-  }
 
-  void _handleConnectionError(String error) {
-    print('Обработка ошибки подключения');
+    final from = message.substring(0, separator);
+    final text = message.substring(separator + 1).trim();
 
     setState(() {
-      _connectionState = 3;
-      _lastError = 'Потеряно соединение с ESP32';
+      _messages.add(Message(from, text, false));
     });
-
-    // Автоматическое переподключение через 3 секунды
-    Future.delayed(const Duration(seconds: 3), () {
-      if (_deviceIp.startsWith('192.168.4.') && _connectionState == 3) {
-        _connectToEsp32();
-      }
-    });
-  }
-
-  Future<void> _disconnect() async {
-    // Отменяем подписку
-    if (_webSocketSubscription != null) {
-      await _webSocketSubscription!.cancel();
-      _webSocketSubscription = null;
-    }
-
-    // Закрываем канал
-    if (_webSocketChannel != null) {
-      try {
-        await _webSocketChannel!.sink.close();
-      } catch (e) {
-        print('Ошибка при закрытии: $e');
-      }
-      _webSocketChannel = null;
-    }
-
-    // Сбрасываем информацию о клиенте на стороне ESP32
-    if (_connectionState != 0) {
-      setState(() {
-        _connectionState = 0;
-        _lastError = '';
-      });
-    }
+    _scrollToBottom();
   }
 
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
-    if (text.isEmpty || _connectionState != 2) return;
+    if (text.isEmpty || _connectionState != ConnectionStatus.connected) return;
 
-    // Добавляем в UI
+    // Добавляем в UI мгновенно, но помечаем как неподтверждённое
+    final message = Message(_myName, text, true, status: MessageStatus.sending);
     setState(() {
-      _messages.add(Message(_myName, text, true));
+      _messages.add(message);
     });
 
     _textController.clear();
     _scrollToBottom();
+    // После отправки поле остаётся активным, иначе следующий ввод
+    // требует повторного тапа
+    _inputFocusNode.requestFocus();
 
-    // Отправляем на ESP32
+    if (_webSocketChannel == null) {
+      setState(() {
+        message.status = MessageStatus.failed;
+      });
+      _showSnackBar('Нет подключения к WebSocket');
+      return;
+    }
+
+    // Формат кадра: msg:<имя>:<текст>
     try {
-      print('Отправляю сообщение: $text');
-
-      final response = await http.post(
-        Uri.parse('http://$_esp32Address/send'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'from=${Uri.encodeComponent(_myName)}&text=${Uri.encodeComponent(text)}',
-      ).timeout(const Duration(seconds: 3));
-
-      if (response.statusCode != 200) {
-        _showSnackBar('Ошибка отправки');
-      }
+      _webSocketChannel!.sink.add('msg:$_myName:$text');
+      debugPrint('Отправлено через WS: msg:$_myName:$text');
     } catch (e) {
-      print('Ошибка отправки: $e');
+      // sink.add обычно не бросает: ошибка мёртвого сокета приходит
+      // асинхронно в onError, поэтому подтверждением служит только эхо
+      debugPrint('Ошибка отправки WS: $e');
+      setState(() {
+        message.status = MessageStatus.failed;
+      });
       _showSnackBar('Не удалось отправить');
+      return;
+    }
+
+    final pending = _PendingEcho('$_myName:$text', message);
+    pending.timeout = Timer(_echoTimeout, () {
+      _pendingEcho.remove(pending);
+      if (!mounted) return;
+      setState(() {
+        message.status = MessageStatus.failed;
+      });
+    });
+    _pendingEcho.add(pending);
+
+    if (_pendingEcho.length > _maxPendingEcho) {
+      final evicted = _pendingEcho.removeAt(0);
+      evicted.timeout?.cancel();
+      evicted.message.status = MessageStatus.failed;
+    }
+  }
+
+  String _formatTime(DateTime time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  Widget _buildStatusIcon(Message msg, bool isDark) {
+    switch (msg.status) {
+      case MessageStatus.sending:
+        return Icon(
+          Icons.schedule,
+          size: 12,
+          color: isDark ? Colors.white70 : Colors.black54,
+        );
+      case MessageStatus.delivered:
+        return Icon(
+          Icons.done,
+          size: 12,
+          color: isDark ? Colors.white70 : Colors.black54,
+        );
+      case MessageStatus.failed:
+        return Tooltip(
+          message: 'ESP32 не подтвердил приём',
+          child: Icon(
+            Icons.error_outline,
+            size: 12,
+            color: isDark ? Colors.red[300] : Colors.red[700],
+          ),
+        );
     }
   }
 
   void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -357,11 +514,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // Список перевёрнут (reverse: true), поэтому низ — это смещение 0.
+  // Прокрутка к maxScrollExtent давала промах: у ListView.builder он
+  // оценочный, пока не измерены все элементы
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
@@ -369,10 +529,20 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _showChangeNameDialog() {
-    final nameController = TextEditingController(text: _myName);
+  // ============================
+  // Диалоги
+  // ============================
 
-    showDialog(
+  void _showChangeNameDialog() {
+    final prefs = _prefs;
+    if (prefs == null) {
+      _showSnackBar('Настройки ещё загружаются');
+      return;
+    }
+
+    _nameController.text = _myName;
+
+    showDialog<void>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -381,7 +551,8 @@ class _ChatScreenState extends State<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: nameController,
+                controller: _nameController,
+                maxLength: _maxNameLength,
                 decoration: const InputDecoration(
                   labelText: 'Ваше имя в чате',
                   border: OutlineInputBorder(),
@@ -403,21 +574,21 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final newName = nameController.text.trim();
+                final newName = _nameController.text.trim();
+                // Прошивка отделяет имя от текста первым двоеточием:
+                // с ним имя дойдёт до собеседников обрезанным
+                if (newName.contains(':')) {
+                  _showSnackBar('Имя не может содержать двоеточие');
+                  return;
+                }
                 if (newName.isNotEmpty && newName != _myName) {
-                  // Сохраняем в SharedPreferences
-                  await _prefs.setString('user_name', newName);
-
+                  await prefs.setString('user_name', newName);
                   setState(() {
                     _myName = newName;
-                    _previousName = newName;
                   });
-
-                  // Отправляем новое имя на ESP32 если подключены
-                  if (_connectionState == 2) {
+                  if (_connectionState == ConnectionStatus.connected) {
                     _sendUserName();
                   }
-
                   if (!context.mounted) return;
                   Navigator.pop(context);
                 } else if (newName.isEmpty) {
@@ -432,189 +603,336 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // ============================
+  // UI
+  // ============================
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isConnected = _connectionState == ConnectionStatus.connected;
+
     String statusText = '';
     Color statusColor = Colors.grey;
     IconData statusIcon = Icons.wifi_off;
 
     switch (_connectionState) {
-      case 0:
+      case ConnectionStatus.disconnected:
         statusText = _lastError.isNotEmpty ? _lastError : 'Нет подключения';
         statusColor = Colors.red;
         statusIcon = Icons.wifi_off;
         break;
-      case 1:
+      case ConnectionStatus.connecting:
         statusText = 'Подключение к ESP32...';
         statusColor = Colors.orange;
         statusIcon = Icons.wifi_find;
         break;
-      case 2:
+      case ConnectionStatus.connected:
         statusText = 'Подключено к ESP32';
         statusColor = Colors.green;
         statusIcon = Icons.wifi;
         break;
-      case 3:
+      case ConnectionStatus.error:
         statusText = _lastError;
         statusColor = Colors.red;
         statusIcon = Icons.error;
         break;
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Радиочат', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.green[800],
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: _showChangeNameDialog,
-            tooltip: 'Изменить имя',
-            color: Colors.white,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              _disconnect();
-              _connectToEsp32();
-            },
-            tooltip: 'Переподключиться',
-            color: Colors.white,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
+    return Column(
+      children: [
+        // Кастомный Title Bar для Linux
+        if (widget.isLinux)
           Container(
-            padding: const EdgeInsets.all(12),
-            color: statusColor.withOpacity(0.1),
+            height: 32,
+            color: Colors.grey[300],
             child: Row(
               children: [
-                Icon(statusIcon, color: statusColor),
-                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
-                      Text('WiFi: $_currentWifiName • IP: $_deviceIp', style: const TextStyle(fontSize: 12)),
-                      if (_connectionState == 2)
-                        Text(
-                          'Ваше имя: $_myName',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                    ],
+                  child: DragToMoveArea(
+                    child: Container(
+                      padding: const EdgeInsets.only(left: 12),
+                      alignment: Alignment.centerLeft,
+                      child: const Text(
+                        'UV-82 Chat',
+                        style: TextStyle(color: Colors.black, fontSize: 14),
+                      ),
+                    ),
                   ),
                 ),
-                if (_connectionState == 3)
-                  TextButton(
-                    onPressed: _connectToEsp32,
-                    child: const Text('Повторить'),
-                  ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.minimize, size: 16),
+                  onPressed: () => windowManager.minimize(),
+                ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => windowManager.close(),
+                ),
               ],
             ),
           ),
 
-          Expanded(
-            child: _messages.isEmpty
-                ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _connectionState == 2 ? Icons.chat_bubble_outline : statusIcon,
-                    size: 64,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _connectionState == 2
-                        ? 'Нет сообщений\nОтправьте первое сообщение'
-                        : 'Подключитесь к ESP32',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            )
-                : ListView.builder(
-              controller: _scrollController,
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                return Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Column(
-                    crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        // Основной Scaffold
+        Expanded(
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Радиочат', style: TextStyle(color: Colors.white)),
+              backgroundColor: Colors.green[800],
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: _prefs == null ? null : _showChangeNameDialog,
+                  tooltip: 'Изменить имя',
+                  color: Colors.white,
+                ),
+              ],
+            ),
+            body: Column(
+              children: [
+                // Панель статуса
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  color: statusColor.withAlpha(26),
+                  child: Row(
                     children: [
-                      Text(
-                        msg.from,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: msg.isMe ? Colors.green[900] : Colors.blue[700],
-                          fontSize: 12,
+                      Icon(statusIcon, color: statusColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              statusText,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'WiFi: $_currentWifiName • IP: $_deviceIp',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            if (_connectionState == ConnectionStatus.connected)
+                              Text(
+                                'Ваше имя: $_myName',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Container(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.75,
+                      if (_connectionState == ConnectionStatus.error ||
+                          _connectionState == ConnectionStatus.disconnected)
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: statusColor,
+                            side: BorderSide(color: statusColor),
+                          ),
+                          onPressed: _isConnecting || _isDisconnecting
+                              ? null
+                              : () async {
+                            await _disconnect();
+                            await Future.delayed(const Duration(milliseconds: 100));
+                            _connectToEsp32();
+                          },
+                          child: _isConnecting || _isDisconnecting
+                              ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: statusColor,
+                            ),
+                          )
+                              : const Text('Подключить'),
                         ),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: msg.isMe ? Colors.green[100] : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
+                    ],
+                  ),
+                ),
+
+                // Список сообщений
+                Expanded(
+                  child: _messages.isEmpty
+                      ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _connectionState == ConnectionStatus.connected
+                              ? Icons.chat_bubble_outline
+                              : statusIcon,
+                          size: 64,
+                          color: Colors.grey,
                         ),
-                        child: Text(msg.text),
+                        const SizedBox(height: 16),
+                        Text(
+                          _connectionState == ConnectionStatus.connected
+                              ? 'Нет сообщений\nОтправьте первое сообщение'
+                              : 'Подключитесь к ESP32',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  )
+                      : ListView.builder(
+                    controller: _scrollController,
+                    reverse: true,
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = _messages[_messages.length - 1 - index];
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 8, horizontal: 12),
+                        alignment: msg.isMe
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: Column(
+                          crossAxisAlignment: msg.isMe
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              msg.from,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: msg.isMe
+                                    ? (isDark
+                                        ? Colors.green[200]
+                                        : Colors.green[900])
+                                    : (isDark
+                                        ? Colors.blue[200]
+                                        : Colors.blue[700]),
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              constraints: BoxConstraints(
+                                maxWidth: MediaQuery.of(context)
+                                    .size
+                                    .width *
+                                    0.75,
+                              ),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: msg.isMe
+                                    ? (isDark
+                                        ? Colors.green[800]
+                                        : Colors.green[100])
+                                    : (isDark
+                                        ? Colors.grey[800]
+                                        : Colors.grey[200]),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              // Цвет текста задаём явно: пузыри не следуют
+                              // за темой, поэтому наследованный белый
+                              // на светлом фоне не читался
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    msg.text,
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.end,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _formatTime(msg.timestamp),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: isDark
+                                              ? Colors.white70
+                                              : Colors.black54,
+                                        ),
+                                      ),
+                                      if (msg.isMe) ...[
+                                        const SizedBox(width: 4),
+                                        _buildStatusIcon(msg, isDark),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // Поле ввода. Не убираем из дерева при потере связи, а
+                // блокируем: пересоздание TextField теряло подключение к
+                // клавиатуре, из-за чего первый ввод не доходил до поля
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _textController,
+                          focusNode: _inputFocusNode,
+                          enabled: isConnected,
+                          minLines: 1,
+                          maxLines: 4,
+                          // Кадр длиннее килобайта прошивка не принимает
+                          maxLength: _maxMessageLength,
+                          buildCounter: (
+                            context, {
+                            required currentLength,
+                            required isFocused,
+                            maxLength,
+                          }) {
+                            // Счётчик показываем только когда лимит близко
+                            if (maxLength == null ||
+                                currentLength < maxLength - 50) {
+                              return null;
+                            }
+                            return Text(
+                              '$currentLength/$maxLength',
+                              style: const TextStyle(fontSize: 11),
+                            );
+                          },
+                          textInputAction: TextInputAction.send,
+                          keyboardType: TextInputType.text,
+                          decoration: InputDecoration(
+                            hintText: isConnected
+                                ? 'Введите сообщение...'
+                                : 'Нет связи с ESP32',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.send),
+                              onPressed: isConnected ? _sendMessage : null,
+                            ),
+                          ),
+                          onSubmitted: (_) => _sendMessage(),
+                        ),
                       ),
                     ],
                   ),
-                );
-              },
+                ),
+              ],
             ),
           ),
-
-          if (_connectionState == 2)
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      maxLines: null,
-                      decoration: InputDecoration(
-                        hintText: 'Введите сообщение...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.send),
-                          onPressed: _sendMessage,
-                        ),
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
-  }
-
-  @override
-  void dispose() {
-    _connectionTimer?.cancel();
-    _disconnect();
-    _textController.dispose();
-    _scrollController.dispose();
-    super.dispose();
   }
 }

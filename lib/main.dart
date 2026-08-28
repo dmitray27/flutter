@@ -1,37 +1,52 @@
 import 'package:flutter/material.dart';
 import 'dart:io' show Platform;
-import 'screen_pro.dart';
-
-// Условный импорт для window_manager
 import 'package:window_manager/window_manager.dart';
+import 'screen_pro.dart';
+import 'dart:async';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  // Всё, что трогает биндинги, должно жить внутри той же зоны, что и runApp,
+  // иначе Flutter ругается на несовпадение зон
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Инициализация window_manager ТОЛЬКО для Linux
-  if (Platform.isLinux) {
-    try {
-      await windowManager.ensureInitialized();
+    // Глобальная обработка ошибок Flutter
+    FlutterError.onError = (details) {
+      debugPrint('❌ Flutter Error: ${details.exception}');
+      if (details.stack != null) {
+        debugPrint('Stack: ${details.stack}');
+      }
+    };
 
-      WindowOptions windowOptions = const WindowOptions(
-        size: Size(400, 800),
-        center: true,
-        minimumSize: Size(400, 800),
-        maximumSize: Size(400, 800),
-        titleBarStyle: TitleBarStyle.hidden,
-      );
+    // Инициализация window_manager ТОЛЬКО для Linux
+    if (Platform.isLinux) {
+      try {
+        await windowManager.ensureInitialized();
 
-      await windowManager.waitUntilReadyToShow(windowOptions, () async {
-        await windowManager.show();
-        await windowManager.focus();
-      });
+        const windowOptions = WindowOptions(
+          size: Size(400, 800),
+          center: true,
+          minimumSize: Size(400, 800),
+          maximumSize: Size(400, 800),
+          titleBarStyle: TitleBarStyle.hidden,
+        );
 
-    } catch (e) {
-      print('WindowManager error: $e');
+        await windowManager.waitUntilReadyToShow(windowOptions, () async {
+          await windowManager.show();
+          await windowManager.focus();
+        });
+
+      } catch (e) {
+        // Ошибка window_manager не критична – приложение всё равно запустится
+        debugPrint('⚠️ WindowManager error (non-critical): $e');
+      }
     }
-  }
 
-  runApp(const MyApp());
+    runApp(const MyApp());
+  }, (error, stack) {
+    debugPrint('❌ Unhandled error: $error');
+    debugPrint('Stack: $stack');
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -39,57 +54,53 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isLinux = Platform.isLinux;
+    final isLinux = Platform.isLinux;
 
     return MaterialApp(
       title: 'UV-82 Chat',
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        // БЕЗ AppBar для Android - чистый ChatScreen
-        appBar: null,
+      home: ChatScreen(isLinux: isLinux),
 
-        body: Column(
-          children: [
-            // Панель заголовка ТОЛЬКО для Linux
-            if (isLinux)
-              Container(
-                height: 32,
-                color: Colors.grey[300],
-                child: Row(
-                  children: [
-                    // Заголовок
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.only(left: 12),
-                        child: const Text(
-                          'UV-82 Chat',
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Кнопки управления окном
-                    IconButton(
-                      icon: const Icon(Icons.minimize, size: 16),
-                      onPressed: () => windowManager.minimize(),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () => windowManager.close(),
-                    ),
-                  ],
-                ),
-              ),
-
-            // Ваш оригинальный ChatScreen на весь экран
-            const Expanded(
-              child: ChatScreen(),
-            ),
-          ],
+      // Светлая тема
+      theme: ThemeData(
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.green,
+          brightness: Brightness.light,
+        ),
+        useMaterial3: true,
+        appBarTheme: const AppBarTheme(
+          centerTitle: true,
+          elevation: 2,
         ),
       ),
+
+      // Тёмная тема
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.green,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        appBarTheme: const AppBarTheme(
+          centerTitle: true,
+          elevation: 2,
+        ),
+      ),
+
+      // Автоматически переключается в зависимости от системы
+      themeMode: ThemeMode.system,
+
+      // Для десктопа – стильные скроллбары
+      builder: (context, child) {
+        return ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            scrollbars: Platform.isLinux || Platform.isWindows || Platform.isMacOS,
+          ),
+          child: child!,
+        );
+      },
     );
   }
 }
