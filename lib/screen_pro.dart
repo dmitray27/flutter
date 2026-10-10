@@ -352,46 +352,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
-
         Expanded(
           child: Scaffold(
             appBar: AppBar(
-              leading: InfoButton(color: appColor.onBar.withValues(alpha: 0.6)),              title: Text('Радиочат', style: TextStyle(color: appColor.onBar)),              backgroundColor: appColor.barColor,
+              leading: InfoButton(color: appColor.onBar.withValues(alpha: 0.6)),
+              title: Text('Радиочат', style: TextStyle(color: appColor.onBar)),
+              backgroundColor: appColor.barColor,
               actions: [
                 IconButton(
                   iconSize: 20,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: Icon(_controller.soundEnabled
                       ? Icons.notifications_active
                       : Icons.notifications_off),
                   onPressed: _controller.toggleSound,
-                  tooltip: _controller.soundEnabled ? 'Выключить звук' : 'Включить звук',
-                  color: appColor.onBar.withValues(alpha: 0.7),                ),
+                  tooltip: _controller.soundEnabled
+                      ? 'Выключить звук'
+                      : 'Включить звук',
+                  color: appColor.onBar.withValues(alpha: 0.7),
+                ),
                 IconButton(
                   iconSize: 20,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: const Icon(Icons.palette),
                   onPressed: () => showColorDialog(context),
                   tooltip: 'Цвет приложения',
-                  color: appColor.onBar.withValues(alpha: 0.7),                ),
+                  color: appColor.onBar.withValues(alpha: 0.7),
+                ),
                 IconButton(
                   iconSize: 20,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: const Icon(Icons.edit),
                   onPressed: _showChangeNameDialog,
                   tooltip: 'Изменить имя',
-                  color: appColor.onBar.withValues(alpha: 0.7),                ),
+                  color: appColor.onBar.withValues(alpha: 0.7),
+                ),
                 IconButton(
                   iconSize: 20,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: const Icon(Icons.power_settings_new),
                   onPressed: _confirmExit,
                   tooltip: 'Выйти',
-                  color: appColor.onBar.withValues(alpha: 0.7),                ),
+                  color: appColor.onBar.withValues(alpha: 0.7),
+                ),
               ],
             ),
             body: Column(
@@ -431,8 +442,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           ],
                         ),
                       ),
-                      if (_controller.connectionStatus == ConnectionStatus.error ||
-                          _controller.connectionStatus == ConnectionStatus.disconnected)
+                      if (_controller.connectionStatus ==
+                              ConnectionStatus.error ||
+                          _controller.connectionStatus ==
+                              ConnectionStatus.disconnected)
                         TextButton(
                           style: TextButton.styleFrom(
                             foregroundColor: statusColor,
@@ -455,7 +468,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-
                 Expanded(
                   child: messages.isEmpty
                       ? Center(
@@ -463,7 +475,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                isConnected ? Icons.chat_bubble_outline : statusIcon,
+                                isConnected
+                                    ? Icons.chat_bubble_outline
+                                    : statusIcon,
                                 size: 64,
                                 color: Colors.grey,
                               ),
@@ -500,9 +514,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: msg.isMe
-                                          ? (isDark
-                                              ? accent[200]
-                                              : accent[900])
+                                          ? (isDark ? accent[200] : accent[900])
                                           : (isDark
                                               ? Colors.blue[200]
                                               : Colors.blue[700]),
@@ -512,21 +524,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   const SizedBox(height: 4),
                                   Container(
                                     constraints: BoxConstraints(
-                                      maxWidth: MediaQuery.of(context).size.width * 0.75,
+                                      maxWidth:
+                                          MediaQuery.of(context).size.width *
+                                              0.75,
                                     ),
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
                                       color: msg.isMe
-                                          ? (isDark
-                                              ? accent[800]
-                                              : accent[100])
+                                          ? (isDark ? accent[800] : accent[100])
                                           : (isDark
                                               ? Colors.grey[800]
                                               : Colors.grey[200]),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           msg.text,
@@ -538,7 +551,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         ),
                                         const SizedBox(height: 4),
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.end,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
@@ -565,7 +579,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           },
                         ),
                 ),
-
                 Padding(
                   padding: const EdgeInsets.all(12.0),
                   child: Row(
