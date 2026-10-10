@@ -360,9 +360,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               backgroundColor: accent[900],
               actions: [
                 IconButton(
-iconSize: 20,  
-padding: EdgeInsets.zero,  
-constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: Icon(_controller.soundEnabled
                       ? Icons.notifications_active
                       : Icons.notifications_off),
@@ -371,18 +371,27 @@ constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   color: Colors.white.withValues(alpha: 0.7),
                 ),
                 IconButton(
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: const Icon(Icons.palette),
                   onPressed: () => showColorDialog(context),
                   tooltip: 'Цвет приложения',
                   color: Colors.white.withValues(alpha: 0.7),
                 ),
                 IconButton(
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: const Icon(Icons.edit),
                   onPressed: _showChangeNameDialog,
                   tooltip: 'Изменить имя',
                   color: Colors.white.withValues(alpha: 0.7),
                 ),
                 IconButton(
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: const Icon(Icons.power_settings_new),
                   onPressed: _confirmExit,
                   tooltip: 'Выйти',
