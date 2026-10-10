@@ -285,7 +285,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = AppColor.current.value.swatch;
+    final appColor = AppColor.current.value;
+    final accent = appColor.swatch;
     final isConnected = _controller.isConnected;
     final messages = _controller.messages;
 
@@ -355,9 +356,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         Expanded(
           child: Scaffold(
             appBar: AppBar(
-              leading: const InfoButton(),
-              title: const Text('Радиочат', style: TextStyle(color: Colors.white)),
-              backgroundColor: accent[900],
+              leading: InfoButton(color: appColor.onBar.withValues(alpha: 0.6)),              title: Text('Радиочат', style: TextStyle(color: appColor.onBar)),              backgroundColor: appColor.barColor,
               actions: [
                 IconButton(
                   iconSize: 20,
@@ -368,8 +367,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       : Icons.notifications_off),
                   onPressed: _controller.toggleSound,
                   tooltip: _controller.soundEnabled ? 'Выключить звук' : 'Включить звук',
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
+                  color: appColor.onBar.withValues(alpha: 0.7),                ),
                 IconButton(
                   iconSize: 20,
                   padding: EdgeInsets.zero,
@@ -377,8 +375,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   icon: const Icon(Icons.palette),
                   onPressed: () => showColorDialog(context),
                   tooltip: 'Цвет приложения',
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
+                  color: appColor.onBar.withValues(alpha: 0.7),                ),
                 IconButton(
                   iconSize: 20,
                   padding: EdgeInsets.zero,
@@ -386,8 +383,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   icon: const Icon(Icons.edit),
                   onPressed: _showChangeNameDialog,
                   tooltip: 'Изменить имя',
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
+                  color: appColor.onBar.withValues(alpha: 0.7),                ),
                 IconButton(
                   iconSize: 20,
                   padding: EdgeInsets.zero,
@@ -395,8 +391,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   icon: const Icon(Icons.power_settings_new),
                   onPressed: _confirmExit,
                   tooltip: 'Выйти',
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
+                  color: appColor.onBar.withValues(alpha: 0.7),                ),
               ],
             ),
             body: Column(
