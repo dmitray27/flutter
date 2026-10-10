@@ -10,8 +10,8 @@ void main() {
     AppColor.current.value = AppColor.defaultColor;
   });
 
-  test('exactly seven rainbow colors, default green', () {
-    expect(AppColor.values.length, 7);
+  test('nine colors (seven rainbow + white + black), default green', () {
+    expect(AppColor.values.length, 9);
     expect(AppColor.defaultColor, AppColor.green);
     expect(AppColor.fromName('violet'), AppColor.violet);
     expect(AppColor.fromName('nonsense'), AppColor.green);
