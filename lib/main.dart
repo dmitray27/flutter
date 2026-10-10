@@ -93,7 +93,7 @@ class MyApp extends StatelessWidget {
         ),
 
         // Автоматически переключается в зависимости от системы
-        themeMode: appColor.themeMode,   // было ThemeMode.system
+        themeMode: appColor.themeMode, // было ThemeMode.system
 
         // Для десктопа – стильные скроллбары
         builder: (context, child) {

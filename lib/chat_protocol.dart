@@ -85,7 +85,9 @@ String generateMessageId() {
 /// распознавания эха, особенно когда подряд идут два одинаковых текста.
 String buildMessageFrame(String name, String text, {String? id}) {
   final effectiveId = id ?? '';
-  return effectiveId.isEmpty ? 'msg:$name:$text' : 'msg:$name:$effectiveId:$text';
+  return effectiveId.isEmpty
+      ? 'msg:$name:$text'
+      : 'msg:$name:$effectiveId:$text';
 }
 
 /// Кадр регистрации имени.

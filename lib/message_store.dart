@@ -119,13 +119,17 @@ class MessageStore {
     // Прошивка отдаёт последние кадры при каждом рукопожатии: после
     // переподключения те же сообщения приходят повторно. Сверяем по id,
     // если он есть; иначе — по имени и тексту.
-    if (frame.isHistory && _alreadyShown(frame.id, frame.from, frame.text, isMine)) {
+    if (frame.isHistory &&
+        _alreadyShown(frame.id, frame.from, frame.text, isMine)) {
       return IngestOutcome.duplicateIgnored;
     }
 
-    final id = frame.id.isNotEmpty ? frame.id : echoKeyFor(frame.from, frame.text);
+    final id =
+        frame.id.isNotEmpty ? frame.id : echoKeyFor(frame.from, frame.text);
     _append(Message(id, frame.from, frame.text, isMine, timestamp: now));
-    return frame.isHistory ? IngestOutcome.addedHistory : IngestOutcome.addedNew;
+    return frame.isHistory
+        ? IngestOutcome.addedHistory
+        : IngestOutcome.addedNew;
   }
 
   /// Подтверждения по оборванному соединению уже не придут.

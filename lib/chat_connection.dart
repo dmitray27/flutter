@@ -20,7 +20,8 @@ abstract class ChatSocket {
 }
 
 class WebSocketChatSocket implements ChatSocket {
-  WebSocketChatSocket(String url, {Duration pingInterval = const Duration(seconds: 5)})
+  WebSocketChatSocket(String url,
+      {Duration pingInterval = const Duration(seconds: 5)})
       : _channel = IOWebSocketChannel.connect(url, pingInterval: pingInterval);
 
   final WebSocketChannel _channel;

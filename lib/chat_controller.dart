@@ -109,8 +109,7 @@ class ChatController extends ChangeNotifier {
   bool get notificationsDenied => _notificationsDenied;
 
   // ---------------- Internal platform channels ----------------
-  static const MethodChannel _networkChannel =
-      MethodChannel('esp32/network');
+  static const MethodChannel _networkChannel = MethodChannel('esp32/network');
 
   // ---------------- Init / dispose ----------------
 
