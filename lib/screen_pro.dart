@@ -360,6 +360,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               backgroundColor: accent[900],
               actions: [
                 IconButton(
+iconSize: 20,  
+padding: EdgeInsets.zero,  
+constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   icon: Icon(_controller.soundEnabled
                       ? Icons.notifications_active
                       : Icons.notifications_off),
