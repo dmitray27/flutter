@@ -45,13 +45,15 @@ class InfoButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       tooltip: 'О приложении',
       onPressed: () => showInfoDialog(context),
       icon: Text(
         'i',
         style: TextStyle(
           color: color,
-          fontSize: 24,
+          fontSize: 20,
           fontWeight: FontWeight.bold,
           fontStyle: FontStyle.italic,
           fontFamily: 'serif',
