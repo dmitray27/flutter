@@ -612,7 +612,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               vertical: 12,
                             ),
                             suffixIcon: IconButton(
-                              icon: const Icon(Icons.send),
+                              icon: const Icon(Icons.send, size: 20),
                               onPressed: isConnected ? _send : null,
                             ),
                           ),
