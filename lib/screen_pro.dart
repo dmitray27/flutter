@@ -597,7 +597,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             required isFocused,
                             maxLength,
                           }) {
-                            
                             return Text(
                               '$currentLength/$maxLength',
                               style: const TextStyle(fontSize: 11),
