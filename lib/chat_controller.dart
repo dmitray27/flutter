@@ -34,7 +34,7 @@ class ChatController extends ChangeNotifier {
     this.echoTimeout = const Duration(seconds: 6),
     this.maxMessages = 500,
     this.maxPendingEcho = 16,
-    this.maxMessageLength = 300,
+    this.maxMessageLength = 75,
     this.maxNameLength = 15,
     this.notificationAsset = '73g_assets/sounds/notify.mp3',
     this.notificationChannelId = 'chat_messages',
