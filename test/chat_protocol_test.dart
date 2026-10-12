@@ -21,6 +21,9 @@ void main() {
       expect(validateName('a:b'), isNotNull);
       expect(validateName('System'), isNotNull);
       expect(validateName('SystemAdmin'), isNotNull);
+      expect(validateName('hist'), isNotNull);
+      expect(validateName('ping'), isNotNull);
+      expect(validateName('history'), isNull);
       expect(validateName('system'), isNull);
       expect(validateName('Ж' * 15), isNull);
       expect(validateName('Ж' * 16), isNotNull);

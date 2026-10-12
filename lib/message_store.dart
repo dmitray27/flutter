@@ -119,6 +119,22 @@ class MessageStore {
     // Прошивка отдаёт последние кадры при каждом рукопожатии: после
     // переподключения те же сообщения приходят повторно. Сверяем по id,
     // если он есть; иначе — по имени и тексту.
+    // Эхо, пришедшее после таймаута или разрыва: сообщение уже помечено
+    // неудачным, но плата его приняла. Возвращаем статус и не дублируем.
+    final late = _ownMessage(
+      frame.id,
+      frame.text,
+      myName: myName,
+      from: frame.from,
+    );
+    if (late != null) {
+      if (late.status == MessageStatus.failed) {
+        late.status = MessageStatus.delivered;
+        return IngestOutcome.echoConfirmed;
+      }
+      return IngestOutcome.duplicateIgnored;
+    }
+
     if (frame.isHistory &&
         _alreadyShown(frame.id, frame.from, frame.text, isMine)) {
       return IngestOutcome.duplicateIgnored;
@@ -166,6 +182,20 @@ class MessageStore {
     return _messages.any(
       (m) => m.from == from && m.text == text && m.isMe == isMe,
     );
+  }
+
+  Message? _ownMessage(
+    String id,
+    String text, {
+    required String myName,
+    required String from,
+  }) {
+    if (from != myName) return null;
+    for (final m in _messages) {
+      if (!m.isMe) continue;
+      if (id.isNotEmpty ? m.id == id : m.text == text) return m;
+    }
+    return null;
   }
 
   void _append(Message message) {
