@@ -101,8 +101,9 @@ const int kMaxNameBytes = 31;
 /// историю или ping, а не за абонента.
 const Set<String> kReservedNames = {'hist', 'ping', 'pong'};
 
-/// Те же правила, что name_is_valid() в прошивке: не пустое, без ':'
-/// не начинается с "System" и не из kReservedNames (иначе можно подделать служебные кадры).
+/// Те же правила, что name_is_valid() в прошивке: не пустое, без ':',
+/// не начинается с "System" и не из kReservedNames (иначе можно подделать
+/// служебные кадры).
 /// Возвращает текст ошибки или null.
 String? validateName(String name) {
   if (name.isEmpty) return 'Имя не может быть пустым';
