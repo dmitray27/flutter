@@ -27,6 +27,7 @@ export 'chat_connection.dart';
 /// за отрисовку, а состояние можно было тестировать и переиспользовать.
 class ChatController extends ChangeNotifier {
   ChatController({
+    http.Client? httpClient,
     this.esp32Address = '192.168.4.1',
     this.handshakeTimeout = const Duration(seconds: 8),
     this.closeTimeout = const Duration(seconds: 8),
@@ -35,13 +36,13 @@ class ChatController extends ChangeNotifier {
     this.maxMessages = 500,
     this.maxPendingEcho = 16,
     this.maxMessageLength = 75,
-    this.maxNameLength = 15,
+    this.maxNameLength = 7,
     this.notificationAsset = '73g_assets/sounds/notify.mp3',
     this.notificationChannelId = 'chat_messages',
     this.silentNotificationChannelId = 'chat_messages_silent',
     this.messageNotificationId = 1001,
     this.soundPrefKey = 'sound_enabled',
-  });
+  }) : _httpClient = httpClient ?? http.Client();
 
   // ---------------- Config ----------------
   final String esp32Address;
@@ -60,6 +61,7 @@ class ChatController extends ChangeNotifier {
   final String soundPrefKey;
 
   // ---------------- Subsystems ----------------
+  final http.Client _httpClient;
   late final ChatConnection _connection;
   late final MessageStore _store;
   final FlutterLocalNotificationsPlugin _notifications =
@@ -88,8 +90,8 @@ class ChatController extends ChangeNotifier {
   /// UI использует его, чтобы прокрутить список вниз.
   VoidCallback? onMessageAdded;
 
-  /// Транзиентные сообщения для SnackBar. UI слушает через [snackBar].
-  final ValueNotifier<String?> snackBar = ValueNotifier(null);
+  /// Колбэк для отображения всплывающих уведомлений (SnackBar) в UI.
+  void Function(String message)? onSnackBar;
 
   // ---------------- Public getters ----------------
   ConnectionStatus get connectionStatus => _connection.status;
@@ -159,7 +161,7 @@ class ChatController extends ChangeNotifier {
       ..onConnected = null
       ..onDisconnected = null;
     _notificationPlayer.dispose();
-    snackBar.dispose();
+    _httpClient.close();
     // Платформенные вызовы идут последовательно: одновременные disconnect/unbind/
     // stopService гонялись с цепочкой closeApp из exit()
     unawaited(_stopMonitoringAndDisconnect().then((_) async {
@@ -175,7 +177,7 @@ class ChatController extends ChangeNotifier {
   }
 
   void _setSnack(String message) {
-    snackBar.value = message;
+    onSnackBar?.call(message);
   }
 
   // ---------------- Preferences ----------------
@@ -434,7 +436,7 @@ class ChatController extends ChangeNotifier {
 
   Future<bool> _pingEsp32() async {
     try {
-      final response = await http
+      final response = await _httpClient
           .get(Uri.parse('http://$esp32Address/ping'))
           .timeout(const Duration(seconds: 2));
       return response.statusCode == 200;
@@ -446,7 +448,7 @@ class ChatController extends ChangeNotifier {
 
   Future<void> _updateWifiInfo() async {
     try {
-      final response = await http
+      final response = await _httpClient
           .get(Uri.parse('http://$esp32Address/info'))
           .timeout(const Duration(seconds: 2));
 

@@ -30,10 +30,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     _controller = ChatController()
       ..onMessageAdded = _scrollToBottom
+      ..onSnackBar = _showSnackBar
       ..addListener(_onControllerChanged)
       ..init();
-
-    _controller.snackBar.addListener(_onSnackBar);
   }
 
   @override
@@ -45,7 +44,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _controller.snackBar.removeListener(_onSnackBar);
+    _controller.onMessageAdded = null;
+    _controller.onSnackBar = null;
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _textController.dispose();
@@ -57,17 +57,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _onControllerChanged() {
     if (mounted) setState(() {});
-  }
-
-  void _onSnackBar() {
-    final message = _controller.snackBar.value;
-    if (message == null || !mounted) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _showSnackBar(message);
-      _controller.snackBar.value = null;
-    });
   }
 
   // ============================
