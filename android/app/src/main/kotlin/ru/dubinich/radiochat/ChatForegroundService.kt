@@ -292,6 +292,7 @@ class ChatForegroundService : Service() {
         // Новый запуск приложения отменяет режим выхода
         fun clearExitState() {
             exiting = false
+            killHandler.removeCallbacks(killRunnable)
         }
 
         // Единая точка выхода для AppBar «Выйти». Если сервис жив — гасим его
@@ -317,11 +318,14 @@ class ChatForegroundService : Service() {
         // MethodChannel успели дойти до системы. Иначе Android держит процесс
         // в кэше и «Выйти» выглядит как сворачивание
         private const val KILL_DELAY_MS = 300L
+        private val killHandler = Handler(Looper.getMainLooper())
+        private val killRunnable = Runnable {
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
 
         private fun scheduleProcessKill() {
-            Handler(Looper.getMainLooper()).postDelayed({
-                android.os.Process.killProcess(android.os.Process.myPid())
-            }, KILL_DELAY_MS)
+            killHandler.removeCallbacks(killRunnable)
+            killHandler.postDelayed(killRunnable, KILL_DELAY_MS)
         }
 
         fun setConnected(isConnected: Boolean) {
