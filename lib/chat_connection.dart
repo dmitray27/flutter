@@ -116,6 +116,11 @@ class ChatConnection {
 
       _setStatus(ConnectionStatus.connected, '');
       await onConnected?.call();
+
+      if (_socket != socket || _status != ConnectionStatus.connected) {
+        throw StateError('Соединение закрыто во время рукопожатия');
+      }
+
       return true;
     } catch (e) {
       debugPrint('Не удалось подключиться: $e');
@@ -184,7 +189,7 @@ class ChatConnection {
   /// закрываем сокет и уведомляем снаружи, не дожидаясь следующего опроса.
   Future<void> _handleBroken(String error) async {
     if (_status == ConnectionStatus.disconnected || _isDisconnecting) return;
-    if (_isConnecting) {
+    if (_isConnecting && _status != ConnectionStatus.connected) {
       // Обрыв во время рукопожатия: connect() сам сделает teardown
       _setStatus(ConnectionStatus.error, error);
       return;

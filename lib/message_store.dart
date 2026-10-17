@@ -103,10 +103,10 @@ class MessageStore {
     required String myName,
     DateTime? now,
   }) {
-    // Своё сообщение, вернувшееся широковещательно. Сверяем по id,
-    // чтобы одинаковые тексты не сливались.
-    final echoIndex =
-        _pendingEcho.indexWhere((pending) => pending.echoKey == frame.echoKey);
+    // Своё сообщение, вернувшееся широковещательно. Сверяем по id и отправителю,
+    // чтобы чужие сообщения с совпадающим id не подтверждали отправку.
+    final echoIndex = _pendingEcho.indexWhere((pending) =>
+        pending.message.from == frame.from && pending.echoKey == frame.echoKey);
     if (echoIndex >= 0) {
       _pendingEcho.removeAt(echoIndex).message.status = MessageStatus.delivered;
       return IngestOutcome.echoConfirmed;
@@ -177,7 +177,9 @@ class MessageStore {
 
   bool _alreadyShown(String id, String from, String text, bool isMe) {
     if (id.isNotEmpty) {
-      return _messages.any((m) => m.id == id && m.from == from);
+      return _messages.any(
+        (m) => m.id == id && m.from == from && m.text == text,
+      );
     }
     return _messages.any(
       (m) => m.from == from && m.text == text && m.isMe == isMe,
@@ -190,9 +192,9 @@ class MessageStore {
     required String myName,
     required String from,
   }) {
-    if (from != myName) return null;
     for (final m in _messages) {
       if (!m.isMe) continue;
+      if (m.from != from) continue;
       if (id.isNotEmpty ? m.id == id : m.text == text) return m;
     }
     return null;
