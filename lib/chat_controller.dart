@@ -28,6 +28,9 @@ export 'chat_connection.dart';
 class ChatController extends ChangeNotifier {
   ChatController({
     http.Client? httpClient,
+    ChatSocket Function()? socketFactory,
+    FlutterLocalNotificationsPlugin? notifications,
+    AudioPlayer? notificationPlayer,
     this.esp32Address = '192.168.4.1',
     this.handshakeTimeout = const Duration(seconds: 8),
     this.closeTimeout = const Duration(seconds: 8),
@@ -42,7 +45,10 @@ class ChatController extends ChangeNotifier {
     this.silentNotificationChannelId = 'chat_messages_silent',
     this.messageNotificationId = 1001,
     this.soundPrefKey = 'sound_enabled',
-  }) : _httpClient = httpClient ?? http.Client();
+  })  : _httpClient = httpClient ?? http.Client(),
+        _socketFactory = socketFactory,
+        _notifications = notifications ?? FlutterLocalNotificationsPlugin(),
+        _notificationPlayer = notificationPlayer ?? AudioPlayer();
 
   // ---------------- Config ----------------
   final String esp32Address;
@@ -62,11 +68,11 @@ class ChatController extends ChangeNotifier {
 
   // ---------------- Subsystems ----------------
   final http.Client _httpClient;
+  final ChatSocket Function()? _socketFactory;
   late final ChatConnection _connection;
   late final MessageStore _store;
-  final FlutterLocalNotificationsPlugin _notifications =
-      FlutterLocalNotificationsPlugin();
-  final AudioPlayer _notificationPlayer = AudioPlayer();
+  final FlutterLocalNotificationsPlugin _notifications;
+  final AudioPlayer _notificationPlayer;
 
   SharedPreferences? _prefs;
 
@@ -123,7 +129,8 @@ class ChatController extends ChangeNotifier {
     );
 
     _connection = ChatConnection(
-      socketFactory: () => WebSocketChatSocket('ws://$esp32Address:81'),
+      socketFactory:
+          _socketFactory ?? () => WebSocketChatSocket('ws://$esp32Address:81'),
       handshakeTimeout: handshakeTimeout,
       closeTimeout: closeTimeout,
       cancelTimeout: cancelTimeout,
@@ -204,8 +211,12 @@ class ChatController extends ChangeNotifier {
     try {
       const settings = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        linux: LinuxInitializationSettings(
+          defaultActionName: 'Открыть',
+          defaultSuppressSound: true,
+        ),
       );
-      await _notifications.initialize(settings);
+      final initialized = await _notifications.initialize(settings);
 
       if (Platform.isAndroid) {
         final granted = await _notifications
@@ -215,7 +226,7 @@ class ChatController extends ChangeNotifier {
         _notificationsDenied = granted == false;
       }
 
-      _notificationsReady = true;
+      _notificationsReady = initialized == true;
       _notify();
     } catch (e) {
       debugPrint('Не удалось инициализировать уведомления: $e');
@@ -237,7 +248,10 @@ class ChatController extends ChangeNotifier {
         messageNotificationId,
         from,
         text,
-        NotificationDetails(android: details),
+        NotificationDetails(
+          android: details,
+          linux: const LinuxNotificationDetails(suppressSound: true),
+        ),
       );
     } catch (e) {
       debugPrint('Не удалось показать уведомление: $e');
@@ -344,6 +358,9 @@ class ChatController extends ChangeNotifier {
   // ---------------- Lifecycle ----------------
 
   void setForeground(bool isForeground) {
+    if (_isForeground != isForeground) {
+      debugPrint('App foreground: $isForeground');
+    }
     _isForeground = isForeground;
   }
 
@@ -579,7 +596,8 @@ class ChatController extends ChangeNotifier {
         onMessageAdded?.call();
         if (_isForeground || !Platform.isAndroid) {
           _playNotificationSound();
-        } else {
+        }
+        if (!_isForeground && (Platform.isAndroid || Platform.isLinux)) {
           _showMessageNotification(frame.from, frame.text);
         }
         return;
@@ -659,7 +677,9 @@ class ChatController extends ChangeNotifier {
   bool _exitedViaPlatform = false;
 
   Future<bool> exit() async {
+    debugPrint('App exit: disconnecting');
     await _stopMonitoringAndDisconnect();
+    debugPrint('App exit: disconnected');
     if (Platform.isAndroid) {
       _boundIp = null;
       _exitedViaPlatform = await _closeApp();

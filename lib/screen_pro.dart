@@ -38,6 +38,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    debugPrint('App lifecycle: $state');
     _controller.setForeground(state == AppLifecycleState.resumed);
   }
 
@@ -253,6 +254,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
 
     if (confirmed != true || !mounted) return;
+    debugPrint('App exit: dialog confirmed');
     await _exit();
   }
 
@@ -263,6 +265,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (Platform.isAndroid) {
       await SystemNavigator.pop();
     } else {
+      debugPrint('App exit: closing desktop window');
       await windowManager.close();
     }
   }
