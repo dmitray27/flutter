@@ -347,15 +347,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         Expanded(
           child: Scaffold(
             appBar: AppBar(
+              centerTitle: false,
+              titleSpacing: 0,
               leading: InfoButton(color: appColor.onBar.withValues(alpha: 0.6)),
-              title: Text('Радиочат', style: TextStyle(color: appColor.onBar)),
+              title: SizedBox(
+                width: double.infinity,
+                child: Text(
+                  'Радиочат',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: appColor.onBar),
+                ),
+              ),
               backgroundColor: appColor.barColor,
               actions: [
                 IconButton(
+                  visualDensity:
+                      const VisualDensity(horizontal: -4, vertical: -4),
                   iconSize: 20,
                   padding: EdgeInsets.zero,
                   constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 36),
+                      const BoxConstraints(minWidth: 28, minHeight: 36),
                   icon: Icon(_controller.soundEnabled
                       ? Icons.notifications_active
                       : Icons.notifications_off),
@@ -366,34 +377,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   color: appColor.onBar.withValues(alpha: 0.7),
                 ),
                 IconButton(
+                  visualDensity:
+                      const VisualDensity(horizontal: -4, vertical: -4),
                   iconSize: 20,
                   padding: EdgeInsets.zero,
                   constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 36),
+                      const BoxConstraints(minWidth: 28, minHeight: 36),
                   icon: const Icon(Icons.palette),
                   onPressed: () => showColorDialog(context),
                   tooltip: 'Цвет приложения',
                   color: appColor.onBar.withValues(alpha: 0.7),
                 ),
                 IconButton(
+                  visualDensity:
+                      const VisualDensity(horizontal: -4, vertical: -4),
                   iconSize: 20,
                   padding: EdgeInsets.zero,
                   constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 36),
+                      const BoxConstraints(minWidth: 28, minHeight: 36),
                   icon: const Icon(Icons.edit),
                   onPressed: _showChangeNameDialog,
                   tooltip: 'Изменить имя',
                   color: appColor.onBar.withValues(alpha: 0.7),
                 ),
-                IconButton(
-                  iconSize: 20,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: const Icon(Icons.power_settings_new),
-                  onPressed: _confirmExit,
-                  tooltip: 'Выйти',
-                  color: appColor.onBar.withValues(alpha: 0.7),
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: IconButton(
+                    visualDensity:
+                        const VisualDensity(horizontal: -4, vertical: -4),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 36),
+                    icon: const Icon(Icons.power_settings_new),
+                    onPressed: _confirmExit,
+                    tooltip: 'Выйти',
+                    color: appColor.onBar.withValues(alpha: 0.7),
+                  ),
                 ),
               ],
             ),
