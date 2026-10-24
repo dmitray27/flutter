@@ -23,6 +23,7 @@ class PushService {
     if (!Platform.isAndroid || _initialized) return;
 
     try {
+
       debugPrint('RuStore Push: проверка доступности...');
       final available = await RustorePushClient.available();
       if (!available) {
