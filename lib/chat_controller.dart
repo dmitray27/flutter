@@ -16,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_connection.dart';
 import 'chat_protocol.dart';
 import 'message_store.dart';
+import 'push_service.dart';
 
 export 'message_store.dart';
 export 'chat_connection.dart';
@@ -219,11 +220,21 @@ class ChatController extends ChangeNotifier {
       final initialized = await _notifications.initialize(settings);
 
       if (Platform.isAndroid) {
-        final granted = await _notifications
+        final androidPlugin = _notifications
             .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>()
-            ?.requestNotificationsPermission();
+                AndroidFlutterLocalNotificationsPlugin>();
+        final granted = await androidPlugin?.requestNotificationsPermission();
         _notificationsDenied = granted == false;
+
+        const updatesChannel = AndroidNotificationChannel(
+          'app_updates',
+          'Обновления приложения',
+          description: 'Уведомления о новых версиях и обновлениях в RuStore',
+          importance: Importance.high,
+        );
+        await androidPlugin?.createNotificationChannel(updatesChannel);
+
+        unawaited(PushService().init());
       }
 
       _notificationsReady = initialized == true;

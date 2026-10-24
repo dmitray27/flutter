@@ -135,7 +135,7 @@ class MessageStore {
       return IngestOutcome.duplicateIgnored;
     }
 
-    if (frame.isHistory &&
+    if ((frame.isHistory || frame.id.isNotEmpty) &&
         _alreadyShown(frame.id, frame.from, frame.text, isMine)) {
       return IngestOutcome.duplicateIgnored;
     }

@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 import 'app_color.dart';
 import 'chat_controller.dart';
 import 'info_dialog.dart';
+import 'update_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final bool isLinux;
@@ -33,6 +34,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ..onSnackBar = _showSnackBar
       ..addListener(_onControllerChanged)
       ..init();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService().checkForUpdate();
+    });
   }
 
   @override

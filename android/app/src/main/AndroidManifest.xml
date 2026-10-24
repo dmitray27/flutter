@@ -44,6 +44,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- RuStore Push Project ID -->
+        <meta-data
+            android:name="com.vk.push.PROJECT_ID"
+            android:value="-eqBiu-NvdfINsGbS8JyTUdcRgUXvrfo" />
+        <meta-data
+            android:name="ru.rustore.sdk.pushclient.PROJECT_ID"
+            android:value="-eqBiu-NvdfINsGbS8JyTUdcRgUXvrfo" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

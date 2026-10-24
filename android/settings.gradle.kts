@@ -13,6 +13,19 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
+        maven {
+            url = java.net.URI("https://artifactory-external.vkpartner.ru/artifactory/maven")
+        }
+    }
+}
+
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url = java.net.URI("https://artifactory-external.vkpartner.ru/artifactory/maven")
+        }
     }
 }
 
