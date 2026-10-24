@@ -82,4 +82,5 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    implementation("ru.rustore.sdk:pushclient:7.2.0")
 }
