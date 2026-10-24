@@ -5,6 +5,7 @@ import 'app_color.dart';
 import 'screen_pro.dart';
 import 'dart:async';
 
+
 void main() {
   // Всё, что трогает биндинги, должно жить внутри той же зоны, что и runApp,
   // иначе Flutter ругается на несовпадение зон
