@@ -26,7 +26,9 @@ class AuditSocket implements ChatSocket {
 }
 
 void main() {
-  test('a different sender with the same id must not confirm my pending message', () {
+  test(
+      'a different sender with the same id must not confirm my pending message',
+      () {
     final store = MessageStore();
     final own = store.addOutgoing('shared1', 'Alice', 'My text');
     final outcome = store.ingest(
@@ -38,7 +40,8 @@ void main() {
     expect(store.messages.length, 2);
   });
 
-  test('late echo after changing my name must restore the original message', () {
+  test('late echo after changing my name must restore the original message',
+      () {
     final store = MessageStore();
     final own = store.addOutgoing('late1', 'Alice', 'Hello');
     store.failAllPending();
@@ -51,7 +54,8 @@ void main() {
     expect(store.messages.length, 1);
   });
 
-  test('renaming must not match a different sender against old own messages', () {
+  test('renaming must not match a different sender against old own messages',
+      () {
     final store = MessageStore();
     final own = store.addOutgoing('shared2', 'Alice', 'Old text');
     store.failAllPending();
@@ -65,7 +69,8 @@ void main() {
 
   test('new board history after reboot must not disappear on reused rx id', () {
     final store = MessageStore();
-    store.ingest(parseIncomingFrame('Remote:r1:Before reboot'), myName: 'Alice');
+    store.ingest(parseIncomingFrame('Remote:r1:Before reboot'),
+        myName: 'Alice');
     final outcome = store.ingest(
       parseIncomingFrame('hist:Remote:r1:After reboot'),
       myName: 'Alice',
@@ -74,7 +79,8 @@ void main() {
     expect(store.messages.length, 2);
   });
 
-  test('closing during onConnected must tear down and report failure', () async {
+  test('closing during onConnected must tear down and report failure',
+      () async {
     final socket = AuditSocket();
     final connection = ChatConnection(socketFactory: () => socket);
     final entered = Completer<void>();
@@ -84,7 +90,9 @@ void main() {
       entered.complete();
       await release.future;
     };
-    connection.onDisconnected = () async { disconnected++; };
+    connection.onDisconnected = () async {
+      disconnected++;
+    };
     final attempt = connection.connect();
     await entered.future;
     await socket.controller.close();

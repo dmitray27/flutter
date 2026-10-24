@@ -23,7 +23,6 @@ class PushService {
     if (!Platform.isAndroid || _initialized) return;
 
     try {
-
       debugPrint('RuStore Push: проверка доступности...');
       final available = await RustorePushClient.available();
       if (!available) {
@@ -43,7 +42,8 @@ class PushService {
           debugPrint('RuStore Push ошибка: $err');
         },
         onMessageOpenedApp: (push.Message? message) {
-          debugPrint('RuStore Push открыт пользователем: ${message?.messageId}');
+          debugPrint(
+              'RuStore Push открыт пользователем: ${message?.messageId}');
         },
       );
 

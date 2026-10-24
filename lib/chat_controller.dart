@@ -220,8 +220,8 @@ class ChatController extends ChangeNotifier {
       final initialized = await _notifications.initialize(settings);
 
       if (Platform.isAndroid) {
-        final androidPlugin = _notifications
-            .resolvePlatformSpecificImplementation<
+        final androidPlugin =
+            _notifications.resolvePlatformSpecificImplementation<
                 AndroidFlutterLocalNotificationsPlugin>();
         final granted = await androidPlugin?.requestNotificationsPermission();
         _notificationsDenied = granted == false;

@@ -111,7 +111,8 @@ void main() {
     controller.dispose();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-            const MethodChannel('dev.fluttercommunity.plus/network_info'), null);
+            const MethodChannel('dev.fluttercommunity.plus/network_info'),
+            null);
   });
 
   Future<void> start() async {

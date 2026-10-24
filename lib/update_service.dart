@@ -34,7 +34,8 @@ class UpdateService {
       }
     } catch (e, stack) {
       // В debug/sideload сборках RuStore SDK возвращает ошибку или "нет обновлений" — это нормально
-      debugPrint('RuStore Update: сбой проверки или обновление недоступно ($e)');
+      debugPrint(
+          'RuStore Update: сбой проверки или обновление недоступно ($e)');
       if (kDebugMode) {
         debugPrint('Stacktrace: $stack');
       }
