@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'dart:io' show Platform;
 import 'package:window_manager/window_manager.dart';
 import 'app_color.dart';
@@ -62,6 +63,9 @@ class MyApp extends StatelessWidget {
       builder: (context, appColor, _) => MaterialApp(
         title: 'Radiochat Core',
         debugShowCheckedModeBanner: false,
+        locale: const Locale('ru'),
+        supportedLocales: const [Locale('ru')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: ChatScreen(isLinux: isLinux),
 
         // Светлая тема
