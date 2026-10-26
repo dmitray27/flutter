@@ -10,8 +10,13 @@ import 'update_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final bool isLinux;
+  final ChatController Function()? controllerFactory;
 
-  const ChatScreen({super.key, required this.isLinux});
+  const ChatScreen({
+    super.key,
+    required this.isLinux,
+    this.controllerFactory,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -23,13 +28,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _nameController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
+  late AppLifecycleState _appLifecycleState;
+  bool _restoreKeyboardOnResume = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _appLifecycleState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
 
-    _controller = ChatController()
+    _controller = (widget.controllerFactory?.call() ?? ChatController())
       ..onMessageAdded = _scrollToBottom
       ..onSnackBar = _showSnackBar
       ..addListener(_onControllerChanged)
@@ -44,7 +53,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     debugPrint('App lifecycle: $state');
+    if (_appLifecycleState == AppLifecycleState.resumed &&
+        state != AppLifecycleState.resumed) {
+      _restoreKeyboardOnResume = !widget.isLinux &&
+          Theme.of(context).platform == TargetPlatform.android &&
+          _inputFocusNode.hasFocus &&
+          View.of(context).viewInsets.bottom > 0;
+    }
+    _appLifecycleState = state;
     _controller.setForeground(state == AppLifecycleState.resumed);
+
+    if (state == AppLifecycleState.resumed && _restoreKeyboardOnResume) {
+      _restoreKeyboardOnResume = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _appLifecycleState != AppLifecycleState.resumed ||
+            !_controller.isConnected ||
+            !_inputFocusNode.hasFocus ||
+            ModalRoute.of(context)?.isCurrent != true) {
+          return;
+        }
+        // Android can hide the IME on Home while Flutter keeps field focus.
+        // requestFocus() on that same node does nothing; show the current
+        // text-input client again, only if its keyboard was open on departure.
+        SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+      });
+    }
   }
 
   @override
@@ -128,12 +162,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ============================
 
   Future<void> _send() async {
-    final text = _textController.text.trim();
+    if (!_controller.isConnected) return;
+
+    // Keep typing after a send-button tap. Do this before awaiting so a late
+    // completion cannot take focus from another field or a disposed screen.
+    _inputFocusNode.requestFocus();
+    final draft = _textController.text;
+    final text = draft.trim();
     if (text.isEmpty) return;
 
     final sent = await _controller.sendMessage(text);
-    if (sent && mounted) _textController.clear();
-    _inputFocusNode.requestFocus();
+    if (!mounted) return;
+    if (sent && _textController.text == draft) _textController.clear();
   }
 
   Future<void> _showChangeNameDialog() async {
@@ -637,6 +677,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               onPressed: isConnected ? _send : null,
                             ),
                           ),
+                          // A chat send is not the end of editing. The default
+                          // send action unfocuses the field before onSubmitted.
+                          onEditingComplete: _textController.clearComposing,
                           onSubmitted: (_) => _send(),
                         ),
                       ),
