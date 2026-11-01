@@ -158,7 +158,11 @@ class _InfoTextState extends State<_InfoText> {
               for (final paragraph in info.manual)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(paragraph, style: theme.bodyMedium),
+                  child: Text(
+                    paragraph,
+                    style: theme.bodyMedium,
+                    textAlign: TextAlign.justify,
+                  ),
                 ),
             ],
           ),
