@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:json5/json5.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Элемент инструкции с заголовком и текстом.
 class ManualItem {
@@ -170,6 +171,35 @@ class _InfoTextState extends State<_InfoText> {
     super.dispose();
   }
 
+  Widget _buildClickableText(String text, TextStyle? style) {
+    final url = Uri.tryParse(text);
+    final isUrl = url != null && (url.hasScheme && (url.scheme == 'http' || url.scheme == 'https'));
+
+    if (isUrl) {
+      return InkWell(
+        onTap: () async {
+          final uri = Uri.parse(text);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri);
+          }
+        },
+        child: Text(
+          text,
+          style: style?.copyWith(
+            color: Colors.blue,
+            decoration: TextDecoration.underline,
+          ),
+        ),
+      );
+    }
+
+    return Text(
+      text,
+      style: style,
+      textAlign: TextAlign.justify,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final info = widget.info;
@@ -220,10 +250,9 @@ class _InfoTextState extends State<_InfoText> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
+                      _buildClickableText(
                         item.text,
-                        style: theme.bodyMedium?.copyWith(fontSize: 12),
-                        textAlign: TextAlign.justify,
+                        theme.bodyMedium?.copyWith(fontSize: 12),
                       ),
                     ],
                   ),
