@@ -1,14 +1,31 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:json5/json5.dart';
+
+/// Элемент инструкции с заголовком и текстом.
+class ManualItem {
+  final String title;
+  final String text;
+
+  const ManualItem({
+    required this.title,
+    required this.text,
+  });
+
+  factory ManualItem.fromJson(Map<String, dynamic> json) {
+    return ManualItem(
+      title: json['title'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+    );
+  }
+}
 
 /// Содержимое окна «О приложении», загружаемое из assets/info.json.
 class AppInfo {
   final String title;
   final List<String> credits;
   final String manualTitle;
-  final List<String> manual;
+  final List<ManualItem> manual;
 
   const AppInfo({
     required this.title,
@@ -22,17 +39,21 @@ class AppInfo {
         (json[key] as List<dynamic>? ?? const [])
             .map((e) => e.toString())
             .toList();
+    List<ManualItem> manualItems() =>
+        (json['manual'] as List<dynamic>? ?? const [])
+            .map((e) => ManualItem.fromJson(e as Map<String, dynamic>))
+            .toList();
     return AppInfo(
       title: json['title'] as String? ?? 'О приложении',
       credits: strings('credits'),
       manualTitle: json['manualTitle'] as String? ?? '',
-      manual: strings('manual'),
+      manual: manualItems(),
     );
   }
 
-  static Future<AppInfo> load({String asset = 'assets/info.json'}) async {
+  static Future<AppInfo> load({String asset = 'assets/info.json5'}) async {
     final raw = await rootBundle.loadString(asset);
-    return AppInfo.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    return AppInfo.fromJson(json5Decode(raw) as Map<String, dynamic>);
   }
 }
 
@@ -76,34 +97,55 @@ class InfoDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: MediaQuery.sizeOf(context).height * 0.7,
-        child: FutureBuilder<AppInfo>(
-          future: AppInfo.load(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Center(
-                child:
-                    Text('Не удалось загрузить info.json:\n${snapshot.error}'),
-              );
-            }
-            final info = snapshot.data;
-            if (info == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            return _InfoText(info: info);
-          },
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: screenWidth,
+        ),
+        child: SizedBox(
+          width: double.maxFinite,
+          height: MediaQuery.sizeOf(context).height * 0.7,
+          child: Column(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: FutureBuilder<AppInfo>(
+                    future: AppInfo.load(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return Center(
+                          child:
+                              Text('Не удалось загрузить info.json:\n${snapshot.error}'),
+                        );
+                      }
+                      final info = snapshot.data;
+                      if (info == null) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      return _InfoText(info: info);
+                    },
+                  ),
+                ),
+              ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Закрыть'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Закрыть'),
-        ),
-      ],
     );
   }
 }
@@ -141,27 +183,49 @@ class _InfoTextState extends State<_InfoText> {
         thumbVisibility: true,
         child: SingleChildScrollView(
           controller: _scroll,
-          padding: const EdgeInsets.only(right: 12),
+          padding: const EdgeInsets.only(right: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(info.title, style: theme.titleLarge),
+              Text(
+                info.title,
+                style: theme.titleLarge?.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(height: 12),
               for (final line in info.credits)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(line, style: theme.bodyMedium),
+                  child: Text(line, style: theme.bodyMedium?.copyWith(fontSize: 12)),
                 ),
               const SizedBox(height: 16),
-              Text(info.manualTitle, style: theme.titleMedium),
+              Text(info.manualTitle, style: theme.titleMedium?.copyWith(fontSize: 12)),
               const SizedBox(height: 8),
-              for (final paragraph in info.manual)
+              for (final item in info.manual)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(
-                    paragraph,
-                    style: theme.bodyMedium,
-                    textAlign: TextAlign.justify,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: Text(
+                          item.title,
+                          style: theme.bodyMedium?.copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item.text,
+                        style: theme.bodyMedium?.copyWith(fontSize: 12),
+                        textAlign: TextAlign.justify,
+                      ),
+                    ],
                   ),
                 ),
             ],
