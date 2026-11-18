@@ -56,7 +56,12 @@ class MessageStore {
   MessageStore({
     this.maxMessages = 500,
     this.maxPendingEcho = 16,
-    this.echoTimeout = const Duration(seconds: 6),
+    // echoTimeout покрывает ожидание Busy Channel Lockout на прошивке,
+    // поэтому заведомо больше времени передачи одного блока.
+    // Значения продублированы из main/afsk_common.h репозитория esp:
+    // BCL_TIMEOUT_MS=30000, BCL_BACKOFF_MAX_MS=1500, плюс ~7 с на
+    // передачу первого блока (BLOCK_TIME_MS ≈ 6850 мс при 200 бод).
+    this.echoTimeout = const Duration(milliseconds: 38500),
   });
 
   final int maxMessages;

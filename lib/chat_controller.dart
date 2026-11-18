@@ -36,7 +36,11 @@ class ChatController extends ChangeNotifier {
     this.handshakeTimeout = const Duration(seconds: 8),
     this.closeTimeout = const Duration(seconds: 8),
     this.cancelTimeout = const Duration(seconds: 2),
-    this.echoTimeout = const Duration(seconds: 6),
+    // Держать в синхроне с MessageStore.echoTimeout: таймаут покрывает
+    // ожидание BCL на прошивке (BCL_TIMEOUT_MS=30000 +
+    // BCL_BACKOFF_MAX_MS=1500 из main/afsk_common.h репозитория esp)
+    // и передачу первого блока (~7 с).
+    this.echoTimeout = const Duration(milliseconds: 38500),
     this.maxMessages = 500,
     this.maxPendingEcho = 16,
     this.maxMessageLength = 75,
