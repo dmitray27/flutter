@@ -140,7 +140,10 @@ class MessageStore {
       return IngestOutcome.duplicateIgnored;
     }
 
-    if ((frame.isHistory || frame.id.isNotEmpty) &&
+    // Дедупликация только для истории. Живое сообщение приходит один раз;
+    // после перезагрузки платы счётчики id сбрасываются, и одинаковое
+    // сообщение («ОК», «Вышли») с тем же id нельзя считать повтором.
+    if (frame.isHistory &&
         _alreadyShown(frame.id, frame.from, frame.text, isMine)) {
       return IngestOutcome.duplicateIgnored;
     }
