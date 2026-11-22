@@ -204,7 +204,8 @@ class ChatController extends ChangeNotifier {
     if (savedName != null && savedName.isNotEmpty) {
       _myName = savedName;
     } else {
-      _myName = 'User_${DateTime.now().millisecondsSinceEpoch % 1000}';
+      // «User» + до 3 цифр = не больше 7 символов (maxNameLength)
+      _myName = 'User${DateTime.now().millisecondsSinceEpoch % 1000}';
       await prefs.setString('user_name', _myName);
     }
     _notify();
@@ -577,7 +578,8 @@ class ChatController extends ChangeNotifier {
 
   void _onFrame(String message) {
     if (_disposed) return;
-    debugPrint('📥 WebSocket: $message');
+    // Текст чужих сообщений не должен попадать в logcat release-сборки
+    if (kDebugMode) debugPrint('📥 WebSocket: $message');
 
     final frame = parseIncomingFrame(message);
 
@@ -654,7 +656,7 @@ class ChatController extends ChangeNotifier {
       return false;
     }
 
-    debugPrint('Отправлено через WS: $outgoing');
+    if (kDebugMode) debugPrint('Отправлено через WS: $outgoing');
     return true;
   }
 

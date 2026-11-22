@@ -11,7 +11,7 @@
 
 ## Требования
 
-- Flutter SDK 3.22+ (Dart ≥ 3.0).
+- Flutter SDK 3.27+ (Dart ≥ 3.6): код использует `Color.withValues`.
 - Android: SDK / эмулятор, `minSdk` из `android/app/build.gradle`.
 - Linux: `libgtk-3-dev` и стандартный toolchain для `flutter build linux`.
 
@@ -69,7 +69,7 @@ ChatScreen (UI)
 
 ### Цикл подключения
 
-1. `ChatController` раз в 2 с (с экспоненциальным backoff до ~30 с при неудачах)
+1. `ChatController` раз в 2 с (с экспоненциальным backoff до 10 с при неудачах)
    читает локальный Wi-Fi IP.
 2. Если IP из `192.168.4.x` — на Android процесс привязывается к этой сети
    (`bindToWifi`), чтобы трафик не ушёл в мобильный интернет. Привязка делается
