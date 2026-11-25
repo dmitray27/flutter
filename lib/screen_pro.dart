@@ -420,7 +420,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 36),
                   icon: SvgIcon(
-                    _controller.soundEnabled ? 'bell' : 'bell-off',
+                    _controller.soundEnabled ? 'bell-ring' : 'bell-off',
                     size: 20,
                     color: appColor.onBar.withValues(alpha: 0.7),
                   ),
