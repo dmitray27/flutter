@@ -110,19 +110,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return '$h:$m';
   }
 
-  Widget _buildStatusIcon(Message msg, bool isDark) {
+  Widget _buildStatusIcon(Message msg, ColorScheme scheme) {
     switch (msg.status) {
       case MessageStatus.sending:
         return Icon(
           Icons.schedule,
           size: 12,
-          color: isDark ? Colors.white70 : Colors.black54,
+          color: scheme.onSurfaceVariant,
         );
       case MessageStatus.delivered:
         return Icon(
           Icons.done,
           size: 12,
-          color: isDark ? Colors.white70 : Colors.black54,
+          color: scheme.onSurfaceVariant,
         );
       case MessageStatus.failed:
         return Tooltip(
@@ -130,7 +130,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           child: Icon(
             Icons.error_outline,
             size: 12,
-            color: isDark ? Colors.red[300] : Colors.red[700],
+            color: scheme.error,
           ),
         );
     }
@@ -201,7 +201,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               const SizedBox(height: 10),
               Text(
                 'Текущее имя: ${_controller.myName}',
-                style: TextStyle(color: Colors.grey[600]),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -322,9 +324,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
     final appColor = AppColor.current.value;
-    final accent = appColor.swatch;
     final isConnected = _controller.isConnected;
     final messages = _controller.messages;
 
@@ -362,7 +363,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (widget.isLinux)
           Container(
             height: 32,
-            color: Colors.grey[300],
+            color: scheme.surfaceContainerHighest,
             child: Row(
               children: [
                 Expanded(
@@ -370,20 +371,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     child: Container(
                       padding: const EdgeInsets.only(left: 12),
                       alignment: Alignment.centerLeft,
-                      child: const Text(
+                      child: Text(
                         'Radiochat Core',
-                        style: TextStyle(color: Colors.black, fontSize: 14),
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                   ),
                 ),
                 IconButton(
                   padding: EdgeInsets.zero,
+                  color: scheme.onSurfaceVariant,
                   icon: const Icon(Icons.minimize, size: 16),
                   onPressed: () => windowManager.minimize(),
                 ),
                 IconButton(
                   padding: EdgeInsets.zero,
+                  color: scheme.onSurfaceVariant,
                   icon: const Icon(Icons.close, size: 18),
                   onPressed: () => windowManager.close(),
                 ),
@@ -499,17 +505,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             ),
                             Text(
                               'WiFi: ${_controller.currentWifiName} • IP: ${_controller.deviceIp}',
-                              style: const TextStyle(fontSize: 12),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
                             ),
                             if (isConnected)
                               Text(
                                 'Ваше имя: ${_controller.myName}',
-                                style: const TextStyle(fontSize: 11),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: scheme.onSurfaceVariant,
+                                ),
                               ),
                             if (_controller.notificationsDenied)
-                              const Text(
+                              Text(
                                 'Уведомления запрещены: в фоне сообщения не видны',
-                                style: TextStyle(fontSize: 11),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: scheme.error,
+                                ),
                               ),
                           ],
                         ),
@@ -551,7 +566,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     ? Icons.chat_bubble_outline
                                     : statusIcon,
                                 size: 64,
-                                color: Colors.grey,
+                                color: scheme.onSurfaceVariant,
                               ),
                               const SizedBox(height: 16),
                               Text(
@@ -559,7 +574,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     ? 'Нет сообщений\nОтправьте первое сообщение'
                                     : 'Подключитесь к УПТС-РК1',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.grey),
+                                style: TextStyle(color: scheme.onSurfaceVariant),
                               ),
                             ],
                           ),
@@ -586,10 +601,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: msg.isMe
-                                          ? (isDark ? accent[200] : accent[900])
-                                          : (isDark
-                                              ? Colors.blue[200]
-                                              : Colors.blue[700]),
+                                          ? scheme.primary
+                                          : scheme.tertiary,
                                       fontSize: 12,
                                     ),
                                   ),
@@ -603,10 +616,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
                                       color: msg.isMe
-                                          ? (isDark ? accent[800] : accent[100])
-                                          : (isDark
-                                              ? Colors.grey[800]
-                                              : Colors.grey[200]),
+                                          ? scheme.primaryContainer
+                                          : scheme.surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Column(
@@ -616,9 +627,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         Text(
                                           msg.text,
                                           style: TextStyle(
-                                            color: isDark
-                                                ? Colors.white
-                                                : Colors.black87,
+                                            color: msg.isMe
+                                                ? scheme.onPrimaryContainer
+                                                : scheme.onSurface,
                                           ),
                                         ),
                                         const SizedBox(height: 4),
@@ -631,14 +642,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                               _formatTime(msg.timestamp),
                                               style: TextStyle(
                                                 fontSize: 10,
-                                                color: isDark
-                                                    ? Colors.white70
-                                                    : Colors.black54,
+                                                color: scheme.onSurfaceVariant,
                                               ),
                                             ),
                                             if (msg.isMe) ...[
                                               const SizedBox(width: 4),
-                                              _buildStatusIcon(msg, isDark),
+                                              _buildStatusIcon(msg, scheme),
                                             ],
                                           ],
                                         ),
