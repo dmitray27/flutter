@@ -142,9 +142,12 @@ void main() {
     expect(notifications.shown, hasLength(1));
     expect(notifications.shown.single?.linux?.suppressSound, isTrue);
     expect(audio.plays, 1);
+    // Дедупликация только для кадров истории (commit 36315c6): повторный
+    // живой кадр с тем же id после перезагрузки платы — новое сообщение.
     await receive('r1');
-    expect(notifications.shown, hasLength(1));
-    expect(audio.plays, 1);
+    expect(controller.messages, hasLength(2));
+    expect(notifications.shown, hasLength(2));
+    expect(audio.plays, 2);
   }, skip: !Platform.isLinux);
 
   test('Linux foreground reception plays sound without a popup', () async {

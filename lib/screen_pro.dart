@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 import 'app_color.dart';
 import 'chat_controller.dart';
 import 'info_dialog.dart';
+import 'svg_icon.dart';
 import 'update_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -412,9 +413,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 36),
-                  icon: Icon(_controller.soundEnabled
-                      ? Icons.notifications_active
-                      : Icons.notifications_off),
+                  icon: SvgIcon(
+                    _controller.soundEnabled ? 'bell' : 'bell-off',
+                    size: 20,
+                    color: appColor.onBar.withValues(alpha: 0.7),
+                  ),
                   onPressed: _controller.toggleSound,
                   tooltip: _controller.soundEnabled
                       ? 'Выключить звук'
@@ -428,7 +431,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 36),
-                  icon: const Icon(Icons.palette),
+                  icon: SvgIcon(
+                    'theme',
+                    size: 20,
+                    color: appColor.onBar.withValues(alpha: 0.7),
+                  ),
                   onPressed: () => showColorDialog(context),
                   tooltip: 'Цвет приложения',
                   color: appColor.onBar.withValues(alpha: 0.7),
@@ -440,7 +447,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 36),
-                  icon: const Icon(Icons.edit),
+                  icon: SvgIcon(
+                    'rename',
+                    size: 20,
+                    color: appColor.onBar.withValues(alpha: 0.7),
+                  ),
                   onPressed: _showChangeNameDialog,
                   tooltip: 'Изменить имя',
                   color: appColor.onBar.withValues(alpha: 0.7),
@@ -454,7 +465,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     padding: EdgeInsets.zero,
                     constraints:
                         const BoxConstraints(minWidth: 28, minHeight: 36),
-                    icon: const Icon(Icons.power_settings_new),
+                    icon: SvgIcon(
+                      'exit',
+                      size: 20,
+                      color: appColor.onBar.withValues(alpha: 0.7),
+                    ),
                     onPressed: _confirmExit,
                     tooltip: 'Выйти',
                     color: appColor.onBar.withValues(alpha: 0.7),

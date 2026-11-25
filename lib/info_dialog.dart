@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:json5/json5.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'svg_icon.dart';
 
 /// Элемент инструкции с заголовком и текстом.
 class ManualItem {
@@ -71,17 +72,7 @@ class InfoButton extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       tooltip: 'О приложении',
       onPressed: () => showInfoDialog(context),
-      icon: Text(
-        'i',
-        style: TextStyle(
-          color: color,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          fontStyle: FontStyle.italic,
-          fontFamily: 'serif',
-          height: 1,
-        ),
-      ),
+      icon: SvgIcon('info', size: 20, color: color),
     );
   }
 }

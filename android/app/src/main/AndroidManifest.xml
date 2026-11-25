@@ -62,10 +62,14 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- Required so canLaunchUrl() sees browser handlers on Android 11+ -->
+        <!-- Required so canLaunchUrl() sees browser handlers on Android 11+.
+             Один <intent> может содержать не более одной схемы. -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="http"/>
         </intent>
     </queries>
